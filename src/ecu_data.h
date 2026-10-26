@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <stdbool.h>  // Add this for bool type
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +17,10 @@ typedef struct {
     uint16_t errors;
     uint8_t  data_valid;
     uint32_t last_update;
+    bool     engine_running;
+    float    fuel_temp;
+    float    air_temp;
+    uint16_t manifold_pressure;
 } ECUData;
 
 extern ECUData  ecu;
