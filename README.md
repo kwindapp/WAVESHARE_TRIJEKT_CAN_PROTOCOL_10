@@ -1,5 +1,5 @@
 ESP32-S3 4.3-inch Capacitive Touch Display Development Board 800×480 with Case Trikekt Can Bus RWB Porsche
-https://motorsteuerung-trijekt.de/de/downloads.php
+https://motorsteuerung-trijekt.de/de/downloads.php. 40 Euro CAN Touch Display
 https://www.waveshare.com/esp32-s3-touch-lcd-4.3b.htm
 <img width="739" height="344" alt="Screenshot 2026-10-26 at 20 59 50" src="https://github.com/user-attachments/assets/6385ee74-9391-4037-b691-8a3235e04ca0" />
 
