@@ -534,8 +534,9 @@ static bool validBattery(float value)
 
 static bool validLambda(float value)
 {
-    return value >= 0.65f &&
-           value <= 2.5f;
+    return isfinite(value) &&
+           value >= 0.50f &&
+           value <= 10.00f;
 }
 
 static bool fresh(
@@ -703,6 +704,18 @@ void decodeCANMessage(const twai_message_t &m)
 
             float lambda2 =
                 U16LE(d + 2) * 0.001f;
+
+            // Diagnose: CAN ID 705 (decimal) raw Lambda payload.
+            static uint32_t lastLambdaDebugMs = 0;
+            if (now - lastLambdaDebugMs >= 1000) {
+                Serial.printf(
+                    "LAMBDA CAN ID=%lu RAW=%02X %02X %02X %02X %02X %02X %02X %02X | L1=%.3f L2=%.3f\n",
+                    (unsigned long)m.identifier,
+                    d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7],
+                    (double)lambda1, (double)lambda2
+                );
+                lastLambdaDebugMs = now;
+            }
 
             trijekt.lambda1 = lambda1;
             trijekt.lambda2 = lambda2;
