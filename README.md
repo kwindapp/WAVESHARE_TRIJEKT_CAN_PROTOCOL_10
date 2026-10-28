@@ -6,3 +6,5 @@ https://www.waveshare.com/esp32-s3-touch-lcd-4.3b.htm
 
 <img width="307" height="357" alt="Screenshot 2026-10-26 at 20 50 13" src="https://github.com/user-attachments/assets/483e3358-9729-4d15-9c10-384d57ae8b57" />
 
+<img width="1206" height="1761" alt="IMG_8536" src="https://github.com/user-attachments/assets/a3bed9a1-e57c-49e8-b89e-9853679806f0" />
+
