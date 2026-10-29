@@ -20,6 +20,8 @@ My goal is to eventually move the ECU display into the glovebox and show the mos
 For example, when I'm stuck in traffic, I could easily monitor the engine temperature on the Nixie clock without constantly having to check the separate ECU display.
 
 A perfect combination of classic Porsche aesthetics and modern technology! 
+<img width="500" height="441" alt="Screenshot 2026-10-30 at 00 56 56" src="https://github.com/user-attachments/assets/89dc6de7-3bdb-4da3-9c50-af2fcd6de310" />
+
 
 Wi-Fi Channel: 1<img width="1536" height="1024" alt="Nixie Clocks in Classic Porsche Dashboards" src="https://github.com/user-attachments/assets/82b195c5-c63a-4140-832c-d18748e76edd" />
 
