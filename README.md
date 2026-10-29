@@ -13,6 +13,13 @@ Classic Display Nixie
 Transmission interval: Every 50 ms (20 updates per second)
 
 Protocol: ESP-NOW Broadcast
+Currently, I have a CAN bus display in my RWB Porsche showing live ECU data, along with a separate ESP32 display featuring a digital Nixie clock.
+
+My goal is to eventually move the ECU display into the glovebox and show the most important engine data directly on real Nixie tubes.
+
+For example, when I'm stuck in traffic, I could easily monitor the engine temperature on the Nixie clock without constantly having to check the separate ECU display.
+
+A perfect combination of classic Porsche aesthetics and modern technology! 
 
 Wi-Fi Channel: 1<img width="1536" height="1024" alt="Nixie Clocks in Classic Porsche Dashboards" src="https://github.com/user-attachments/assets/82b195c5-c63a-4140-832c-d18748e76edd" />
 
