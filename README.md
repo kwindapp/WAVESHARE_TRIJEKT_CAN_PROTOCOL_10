@@ -19,7 +19,11 @@ My goal is to eventually move the ECU display into the glovebox and show the mos
 
 For example, when I'm stuck in traffic, I could easily monitor the engine temperature on the Nixie clock without constantly having to check the separate ECU display.
 
-A perfect combination of classic Porsche aesthetics and modern technology! 
+A perfect combination of classic Porsche aesthetics and modern technology!
+<img width="1206" height="1696" alt="IMG_8697 2" src="https://github.com/user-attachments/assets/a6d80f2e-97be-4c81-b832-ee71b1df45b7" />
+<img width="1068" height="509" alt="IMG_8692" src="https://github.com/user-attachments/assets/b5eae9ad-4000-4d75-b542-e3769376dab1" />
+
+
 <img width="500" height="441" alt="Screenshot 2026-10-30 at 00 56 56" src="https://github.com/user-attachments/assets/89dc6de7-3bdb-4da3-9c50-af2fcd6de310" />
 
 
