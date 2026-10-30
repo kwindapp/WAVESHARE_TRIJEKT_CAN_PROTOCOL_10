@@ -17,8 +17,11 @@ Currently, I have a CAN bus display in my RWB Porsche showing live ECU data, alo
 
 My goal is to eventually move the ECU display into the glovebox and show the most important engine data directly on real Nixie tubes.
 
-For example, when I'm stuck in traffic, I could easily monitor the engine temperature on the Nixie clock without constantly having to check the separate ECU display.
+For example, when I'm stuck in traffic, I could easily monitor the engine temperature directly on the Nixie display without constantly checking the separate ECU screen.
 
+The system could also feature configurable warning thresholds. If the engine temperature exceeds a predefined critical value, the Nixie tubes would automatically switch from displaying the time to showing the actual temperature, with the digits flashing to alert the driver.
+
+This could also work for other ECU parameters, such as oil temperature, oil pressure, or battery voltage, combining classic Nixie ambient lighting with modern engine monitoring and safety features.
 A perfect combination of classic Porsche aesthetics and modern technology!
 <img width="1206" height="1696" alt="IMG_8697 2" src="https://github.com/user-attachments/assets/a6d80f2e-97be-4c81-b832-ee71b1df45b7" />
 <img width="1068" height="509" alt="IMG_8692" src="https://github.com/user-attachments/assets/b5eae9ad-4000-4d75-b542-e3769376dab1" />
