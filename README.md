@@ -38,4 +38,4 @@ Wi-Fi Channel: 1<img width="1536" height="1024" alt="Nixie Clocks in Classic Por
 <img width="307" height="357" alt="Screenshot 2026-10-26 at 20 50 13" src="https://github.com/user-attachments/assets/483e3358-9729-4d15-9c10-384d57ae8b57" />
 
 <img width="1206" height="1761" alt="IMG_8536" src="https://github.com/user-attachments/assets/a3bed9a1-e57c-49e8-b89e-9853679806f0" />
-
+https://motec.zendesk.com/hc/en-gb/article_attachments/14440215117327
