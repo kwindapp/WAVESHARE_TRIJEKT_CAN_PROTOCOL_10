@@ -45,3 +45,9 @@ https://motec.zendesk.com/hc/en-gb/article_attachments/14440215117327
 my first test great 12V suplly perfect
 <img width="3024" height="4032" alt="IMG_8677 2" src="https://github.com/user-attachments/assets/8c40b173-1183-402b-a37d-170dd94a85d8" />
 
+AIR WERK – Retro Tube Amplifier Concept
+
+The AIR WERK tube amplifier could also be a fake tube amplifier, combining the beautiful vintage appearance of classic vacuum tubes with modern electronics.
+
+Instead of using traditional amplifier tubes, we could integrate real Nixie tubes or specially designed illuminated decorative tubes featuring the AIR WERK logo, Porsche Classic branding, or custom company logos.
+<img width="1367" height="1151" alt="Vintage Dashboard Tube Amplifier Glow" src="https://github.com/user-attachments/assets/bae05d21-781f-4708-afc7-42fe03acc325" />
