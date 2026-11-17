@@ -23,6 +23,12 @@ The system could also feature configurable warning thresholds. If the engine tem
 
 This could also work for other ECU parameters, such as oil temperature, oil pressure, or battery voltage, combining classic Nixie ambient lighting with modern engine monitoring and safety features.
 A perfect combination of classic Porsche aesthetics and modern technology!
+
+
+
+<img width="1206" height="1351" alt="IMG_9302" src="https://github.com/user-attachments/assets/2c76df52-dc1e-4195-99e0-da47383169c5" />
+<img width="1206" height="1281" alt="IMG_9301" src="https://github.com/user-attachments/assets/a9da15c4-c9f0-4766-b10a-e1ac695641c5" />
+
 <img width="1536" height="1024" alt="Air Werk Luxury Automotive Moodboard" src="https://github.com/user-attachments/assets/3ccf082d-c607-4e09-96d1-eb2992083d2a" />
 
 
