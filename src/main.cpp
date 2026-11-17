@@ -15,6 +15,8 @@
 #include <WiFi.h>
 #include <string.h>
 #include <math.h>
+#include <Preferences.h>
+#include <WiFiManager.h>
 
 using namespace esp_panel::drivers;
 using namespace esp_panel::board;
@@ -1059,6 +1061,7 @@ void sendEspNowValues()
 
 static lv_obj_t *originalScreen = nullptr;
 static lv_obj_t *canScreen = nullptr;
+static lv_obj_t *airScreen = nullptr; // forward declaration: MODE 2 Nixie
 
 static lv_obj_t *canValueLabels[CAN_VALUE_COUNT] = {};
 
@@ -1073,8 +1076,8 @@ static uint32_t lastCANScreenUpdate = 0;
 
 extern "C" void open_trijekt_mode2(void)
 {
-    if (canScreen) {
-        lv_scr_load(canScreen);
+    if (airScreen) {
+        lv_scr_load(airScreen);
     }
 }
 
@@ -1358,7 +1361,7 @@ static void createCANScreen()
 
     lv_label_set_text(
         backLabel,
-        "MODE 1"
+        "< MODE 2 NIXIE"
     );
 
     lv_obj_set_style_text_font(
@@ -1377,13 +1380,13 @@ static void createCANScreen()
 
     lv_obj_add_event_cb(
         backButton,
-        mode1_button_event,
+        mode2_button_event,
         LV_EVENT_CLICKED,
         nullptr
     );
 
     Serial.println(
-        "MODE 2 HOLLOW22 SCREEN CREATED"
+        "MODE 3 ECU VALUES SCREEN CREATED"
     );
 }
 
@@ -1736,6 +1739,297 @@ static void updateCANScreen()
 }
 
 // ============================================================
+// AIR WERK MENU 3 - ADDITIVE NIXIE CONTROLLER
+// Original MODE 1, MODE 2, CAN and ESP-NOW are unchanged.
+// VERIFY UART pins are free on YOUR Waveshare ESP32-S3 board.
+// Waveshare onboard RS485: GPIO44 TX / GPIO43 RX, automatic direction.
+// RS485 A/B -> converter A/B -> TTL receiver output -> Nixie RX.
+// Check converter TTL output voltage before connecting to Nixie.
+// ============================================================
+#ifndef AIRWERK_NIXIE_TX
+#define AIRWERK_NIXIE_TX 44
+#endif
+#ifndef AIRWERK_NIXIE_RX
+#define AIRWERK_NIXIE_RX 43
+#endif
+static HardwareSerial airSerial(2);
+// Diagnostic: UART disabled to test for LCD GPIO conflict.
+static constexpr bool AIRWERK_UART_ENABLED = true;
+static Preferences airPrefs;
+static lv_obj_t *airStatus = nullptr, *airList = nullptr;
+static bool airLed = false, airBuzz = true, airAuto = false, airFade = false;
+static uint8_t airColor = 0, airLedBright = 25, airTubeBright = 100;
+static uint8_t airECUMode = 0, airAnimStyle = 0;
+static bool airAnimating = false, airClock = true, airStopwatch = false, airSWRun = false;
+static uint32_t airAnimStart = 0, airLastFrame = 0, airLastCycle = 0;
+static uint32_t airLastLive = 0, airLastStop = 0, airSWBase = 0, airSWStart = 0;
+static uint32_t airLastFade = 0;
+static int airFadeVal = 0, airFadeDir = 1, airLastPulse = -1;
+static char airDigits[7] = "------";
+static const char *airColors[] = {"AMBER","RED","GREEN","BLUE","WHITE","PURPLE"};
+static WiFiManager airWiFiManager;
+static bool airWifiPortal = false;
+static bool airWifiConnected = false;
+static void airWifiStart();
+static void airWifiStop();
+static void airWifiTick();
+static const char *airActions[] = {
+ "CINEMATIC 1", "CINEMATIC 2 - KITT", "AUTO CINEMATIC 5 MIN",
+ "RTC CLOCK", "SHOW 911930", "LED ON / OFF", "LED COLOR",
+ "LED BRIGHTNESS +10", "LED FADE DEMO", "NIXIE BRIGHTNESS +10",
+ "NIXIE BRIGHTNESS -10", "STARTUP REPLAY", "BUZZER ON / OFF",
+ "BUZZER TEST", "MEGA STATUS", "STOPWATCH MODE", "STOPWATCH START / PAUSE",
+ "STOPWATCH RESET", "BUZZER TONE", "NIXIE RPM", "NIXIE BATTERY",
+ "NIXIE ENGINE TEMP", "NIXIE THROTTLE", "NIXIE PEDAL",
+ "ECU DISPLAY OFF", "LED OFF", "MODE 3 - ALL ECU VALUES",
+ "WIFI SETUP - START", "WIFI SETUP - STOP"
+};
+static void airCmd(const String &s) {
+ if (AIRWERK_UART_ENABLED) {
+  airSerial.println(s);
+  airSerial.flush();
+  if (s == "MODE:CLOCK") { airSerial.println("DOTS:ON"); airSerial.flush(); }
+  Serial.printf("AIR WERK RS485 TX: %s\n", s.c_str());
+ } else {
+  Serial.printf("AIR WERK RS485 DISABLED: %s\n", s.c_str());
+ }
+}
+static void airDisplay(const char *digits) { if(strcmp(airDigits,digits)!=0) { strncpy(airDigits,digits,6); airDigits[6]=0; airCmd(String("DISPLAY:")+digits); } }
+static void airSave() { airPrefs.putBool("led",airLed); airPrefs.putBool("buzzer",airBuzz); airPrefs.putBool("autocine",airAuto); airPrefs.putUChar("color",airColor); airPrefs.putUChar("ledbright",airLedBright); airPrefs.putUChar("tube",airTubeBright); }
+static void airStopSW();
+static void airSetClock() { airStopSW(); airAnimating=false; airStopwatch=false; airECUMode=0; airFade=false; airClock=true; airCmd("MODE:CLOCK"); strcpy(airDigits,"------"); airLastCycle=millis(); }
+static void airStartAnimation(uint8_t style) { airAnimating=true; airAnimStyle=style; airClock=false; airStopwatch=false; airECUMode=0; airFade=false; airLed=false; airAnimStart=millis(); airLastFrame=0; airLastPulse=-1; airCmd("LED:OFF"); airCmd(String("NIXIE:BRIGHT:")+airTubeBright); strcpy(airDigits,"------"); }
+static uint32_t airSWMillis() { return airSWBase+(airSWRun ? millis()-airSWStart : 0); }
+static void airStopSW() { if(airSWRun) airSWBase+=millis()-airSWStart; airSWRun=false; }
+static void airUpdateStatus() {
+ if(!airStatus || lv_scr_act()!=airScreen) return;
+ const char *mode = airAnimating?"CINEMATIC":airECUMode?"LIVE ECU":airStopwatch?"STOPWATCH":airClock?"CLOCK":"MANUAL";
+ lv_label_set_text_fmt(airStatus,"%s | %s | TUBE %u%% | LED %s %u%% | AUTO %s",mode,airDigits,airTubeBright,airLed?airColors[airColor]:"OFF",airLedBright,airAuto?"ON":"OFF");
+}
+static void airDoAction(int i) {
+ switch(i) {
+ case 0: airStartAnimation(0); break;
+ case 1: airStartAnimation(1); break;
+ case 2: airAuto=!airAuto; airLastCycle=millis(); airSave(); break;
+ case 3: airSetClock(); break;
+ case 4: airAnimating=false; airECUMode=0; airStopwatch=false; airClock=false; strcpy(airDigits,"------"); airDisplay("911930"); break;
+ case 5: airLed=!airLed; airCmd(airLed?"LED:ON":"LED:OFF"); airSave(); break;
+ case 6: airColor=(airColor+1)%6; airCmd(String("LED:COLOR:")+airColor); airSave(); break;
+ case 7: airLedBright=airLedBright>=100?0:airLedBright+10; airLed=true; airCmd("LED:ON"); airCmd(String("LED:BRIGHT:")+airLedBright); airSave(); break;
+ case 8: airFade=!airFade; if(airFade){airLed=true;airFadeVal=0;airFadeDir=1;airCmd("LED:ON");airCmd("LED:BRIGHT:0");}else{airLedBright=airFadeVal;airSave();} break;
+ case 9: airTubeBright=airTubeBright>=100?0:airTubeBright+10; airCmd(String("NIXIE:BRIGHT:")+airTubeBright); airSave(); break;
+ case 10: airTubeBright=airTubeBright<10?0:airTubeBright-10; airCmd(String("NIXIE:BRIGHT:")+airTubeBright); airSave(); break;
+ case 11: airAnimating=false; airECUMode=0; airStopwatch=false; airClock=false; airCmd("STARTUP:PLAY"); break;
+ case 12: airBuzz=!airBuzz; airCmd(airBuzz?"BUZZ:ON":"BUZZ:OFF"); airSave(); break;
+ case 13: airCmd("BUZZ:BEEP"); break;
+ case 14: airCmd("PING");airCmd("NIXIE:STATUS");airCmd("BUZZ:STATUS");airCmd("LED:STATUS");break;
+ case 15: airAnimating=false;airECUMode=0;airClock=false;airStopwatch=true;airStopSW();airSWBase=0;airDisplay("000000");break;
+ case 16: if(!airStopwatch) {airStopwatch=true;airSWBase=0;airClock=false;airECUMode=0;airAnimating=false;} if(airSWRun)airStopSW();else{airSWStart=millis();airSWRun=true;}break;
+ case 17: airStopSW();airSWBase=0;airStopwatch=true;airClock=false;airDisplay("000000");break;
+ case 18: airCmd("BUZZ:TONE:1500,250");break;
+ case 19:case 20:case 21:case 22:case 23: airAnimating=false;airStopSW();airStopwatch=false;airClock=false;airECUMode=i-18;strcpy(airDigits,"------");airLastLive=0;break;
+ case 24: airSetClock();break;
+ case 25: airFade=false;airLed=false;airCmd("LED:OFF");airSave();break;
+ case 26: if(canScreen)lv_scr_load(canScreen);break;
+ case 27: airWifiStart();break;
+ case 28: airWifiStop();break;
+ }
+ airUpdateStatus();
+}
+static void airActionEvent(lv_event_t *e) { if(lv_event_get_code(e)==LV_EVENT_CLICKED) airDoAction((int)(intptr_t)lv_event_get_user_data(e)); }
+static void airOpenEvent(lv_event_t *e) { if(lv_event_get_code(e)==LV_EVENT_CLICKED && airScreen) {lv_scr_load(airScreen);airUpdateStatus();} }
+// Fixed black / charcoal styling, including LVGL's default blue pressed/focus states.
+// Stable fixed-pixel two-column layout for 800x480 Waveshare display.
+// Avoid percentage-width flex children: they can collapse into thin stripes.
+static void airStyleButton(lv_obj_t *btn, bool isBack=false) {
+ lv_obj_remove_style_all(btn);
+ lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+ lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+ lv_obj_set_style_radius(btn, 9, LV_PART_MAIN);
+ lv_obj_set_style_pad_all(btn, 5, LV_PART_MAIN);
+ lv_obj_set_style_bg_color(btn,lv_color_hex(isBack?0x553016:0x252525),LV_PART_MAIN|LV_STATE_DEFAULT);
+ lv_obj_set_style_bg_opa(btn,LV_OPA_COVER,LV_PART_MAIN|LV_STATE_DEFAULT);
+ lv_obj_set_style_bg_color(btn,lv_color_hex(0x654321),LV_PART_MAIN|LV_STATE_PRESSED);
+ lv_obj_set_style_bg_opa(btn,LV_OPA_COVER,LV_PART_MAIN|LV_STATE_PRESSED);
+ lv_obj_set_style_border_color(btn,lv_color_hex(isBack?0xFFAA33:0x686868),LV_PART_MAIN);
+ lv_obj_set_style_border_width(btn,2,LV_PART_MAIN);
+ lv_obj_set_style_outline_width(btn,0,LV_PART_MAIN|LV_STATE_FOCUSED);
+ lv_obj_set_style_shadow_width(btn,0,LV_PART_MAIN);
+}
+static void airAddButton(lv_obj_t *parent,const char *name,int action) {
+ lv_obj_t *btn=lv_btn_create(parent);
+ // Large single-column touchscreen controls; fixed sizes prevent collapsed stripes.
+ lv_obj_set_size(btn,728,112);
+ airStyleButton(btn);
+ if(action==4 || action==26) {
+  lv_obj_set_style_border_color(btn,lv_color_hex(0xFFAA33),LV_PART_MAIN);
+ }
+ lv_obj_add_event_cb(btn,airActionEvent,LV_EVENT_CLICKED,(void *)(intptr_t)action);
+ lv_obj_t *label=lv_label_create(btn);
+ lv_obj_set_width(label,704);
+ lv_obj_set_style_text_font(label,&ui_font_Hollow38,LV_PART_MAIN);
+ lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
+ lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,LV_PART_MAIN);
+ lv_obj_set_style_text_color(label,lv_color_white(),LV_PART_MAIN);
+ lv_label_set_text(label,name);
+ lv_obj_center(label);
+}
+static void airCreateScreen() {
+ if(airScreen)return;
+ airScreen=lv_obj_create(nullptr);
+ lv_obj_clear_flag(airScreen,LV_OBJ_FLAG_SCROLLABLE);
+ lv_obj_set_style_bg_color(airScreen,lv_color_hex(0x090909),LV_PART_MAIN);
+ lv_obj_set_style_bg_opa(airScreen,LV_OPA_COVER,LV_PART_MAIN);
+ lv_obj_set_style_border_width(airScreen,0,LV_PART_MAIN);
+ lv_obj_set_style_pad_all(airScreen,0,LV_PART_MAIN);
+ lv_obj_set_size(airScreen,LV_HOR_RES,LV_VER_RES);
+ lv_obj_t *back=lv_btn_create(airScreen);
+ lv_obj_set_size(back,210,60);
+ lv_obj_align(back,LV_ALIGN_TOP_LEFT,14,10);
+ airStyleButton(back,true);
+ lv_obj_add_event_cb(back,mode1_button_event,LV_EVENT_CLICKED,nullptr);
+ lv_obj_t *backLabel=lv_label_create(back);
+ lv_label_set_text(backLabel,"< MODE 1");
+ lv_obj_set_style_text_font(backLabel,&ui_font_Hollow38,LV_PART_MAIN);
+ lv_obj_set_style_text_color(backLabel,lv_color_white(),LV_PART_MAIN);
+ lv_obj_center(backLabel);
+ lv_obj_t *title=lv_label_create(airScreen);
+ lv_label_set_text(title,"AIR WERK  |  MODE 2 NIXIE");
+ lv_obj_set_style_text_color(title,lv_color_hex(0xFFAA33),LV_PART_MAIN);
+ lv_obj_align(title,LV_ALIGN_TOP_RIGHT,-18,24);
+ airStatus=lv_label_create(airScreen);
+ lv_obj_set_style_text_color(airStatus,lv_color_white(),LV_PART_MAIN);
+ lv_obj_set_width(airStatus,760);
+ lv_label_set_long_mode(airStatus,LV_LABEL_LONG_WRAP);
+ lv_obj_set_pos(airStatus,18,76);
+ airList=lv_obj_create(airScreen);
+ lv_obj_set_size(airList,780,344);
+ lv_obj_set_pos(airList,10,126);
+ lv_obj_set_style_bg_color(airList,lv_color_hex(0x151515),LV_PART_MAIN);
+ lv_obj_set_style_bg_opa(airList,LV_OPA_COVER,LV_PART_MAIN);
+ lv_obj_set_style_border_color(airList,lv_color_hex(0x444444),LV_PART_MAIN);
+ lv_obj_set_style_border_width(airList,1,LV_PART_MAIN);
+ lv_obj_set_style_radius(airList,7,LV_PART_MAIN);
+ lv_obj_set_style_pad_all(airList,12,LV_PART_MAIN);
+ lv_obj_set_style_pad_row(airList,14,LV_PART_MAIN);
+ lv_obj_set_style_pad_column(airList,12,LV_PART_MAIN);
+ lv_obj_set_flex_flow(airList,LV_FLEX_FLOW_COLUMN);
+ lv_obj_set_flex_align(airList,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_START,LV_FLEX_ALIGN_START);
+ lv_obj_set_scroll_dir(airList,LV_DIR_VER);
+ lv_obj_set_scrollbar_mode(airList,LV_SCROLLBAR_MODE_ACTIVE);
+ for(int i=0;i<(int)(sizeof(airActions)/sizeof(airActions[0]));++i)
+  airAddButton(airList,airActions[i],i);
+ airUpdateStatus();
+}
+// WiFiManager runs only when requested from MENU 3.  WiFi and ESP-NOW
+// share one radio: while WiFi setup/connection is active, ESP-NOW channel-1
+// broadcasting is deliberately suspended. CAN and Nixie UART continue.
+static void airWifiStart() {
+ if (airWifiPortal || airWifiConnected) {
+  Serial.println("AIR WERK WIFI: already active; STOP to return to ESP-NOW");
+  return;
+ }
+ espnow_enabled = false;
+ if (espnow_ready) { esp_now_deinit(); espnow_ready = false; }
+ WiFi.mode(WIFI_STA);
+ airWiFiManager.setConfigPortalBlocking(false);
+ airWiFiManager.setConfigPortalTimeout(0);
+ airWiFiManager.startConfigPortal("AIR-WERK-SETUP", "airwerk911");
+ airWifiPortal = true;
+ Serial.println("WIFI SETUP: connect to AIR-WERK-SETUP, password airwerk911, open 192.168.4.1");
+}
+static void airWifiStop() {
+ if (airWifiPortal) { airWiFiManager.stopConfigPortal(); airWifiPortal = false; }
+ WiFi.disconnect(true, false);
+ WiFi.mode(WIFI_STA);
+ airWifiConnected = false;
+ espnow_ready = false;
+ espnow_enabled = true;
+ if (!espnow_init_simple()) Serial.println("ESP-NOW restore failed");
+ Serial.println("WIFI setup stopped; ESP-NOW channel 1 restored");
+}
+static void airWifiTick() {
+ if (airWifiPortal) {
+  airWiFiManager.process();
+  if (WiFi.status() == WL_CONNECTED) {
+   airWifiConnected = true;
+   airWifiPortal = false;
+   Serial.printf("WIFI CONNECTED: %s\n", WiFi.localIP().toString().c_str());
+   // ESP-NOW remains off until WIFI SETUP - STOP is tapped.
+  }
+ }
+}
+static void airInit() {
+ airPrefs.begin("airwerk",false);
+ airLed=airPrefs.getBool("led",false);airBuzz=airPrefs.getBool("buzzer",true);
+ airAuto=airPrefs.getBool("autocine",false);airColor=airPrefs.getUChar("color",0)%6;
+ airLedBright=airPrefs.getUChar("ledbright",25);if(airLedBright>100)airLedBright=25;
+ airTubeBright=airPrefs.getUChar("tube",100);if(airTubeBright>100)airTubeBright=100;
+ if(AIRWERK_UART_ENABLED) {
+  airSerial.begin(9600, SERIAL_8N1, AIRWERK_NIXIE_RX, AIRWERK_NIXIE_TX);
+  Serial.printf("AIR WERK RS485 READY: TX GPIO%d RX GPIO%d 9600 8N1\n", AIRWERK_NIXIE_TX, AIRWERK_NIXIE_RX);
+}
+ airCmd("LED:OFF");airCmd(String("LED:COLOR:")+airColor);
+ airCmd(String("LED:BRIGHT:")+airLedBright);airCmd(String("NIXIE:BRIGHT:")+airTubeBright);
+ airCmd(airBuzz?"BUZZ:ON":"BUZZ:OFF");airCmd("DOTS:ON");
+ airSetClock();
+}
+static void airTick() {
+ uint32_t now=millis();
+ // Read optional Mega replies without blocking the existing CAN loop.
+ static char rx[96];static uint8_t n=0;
+ while(AIRWERK_UART_ENABLED && airSerial.available()) {char c=(char)airSerial.read();if(c=='\n'){rx[n]=0;if(n)Serial.printf("AIR WERK MEGA: %s\n",rx);n=0;}else if(c!='\r'){if(n<sizeof(rx)-1)rx[n++]=c;else n=0;}}
+ if(airAuto && airClock && !airAnimating && now-airLastCycle>=300000UL) {static bool nextKitt=false;airStartAnimation(nextKitt?1:0);nextKitt=!nextKitt;}
+ if(airAnimating) {
+  uint32_t t=now-airAnimStart;
+  if(t>=30000UL) {airAnimating=false;airCmd(String("NIXIE:BRIGHT:")+airTubeBright);airCmd("LED:OFF");airSetClock();}
+  else if(t>=4800UL)airDisplay("911930");
+  else if(now-airLastFrame>=85) {
+   airLastFrame=now;char d[7]="000000";const char target[]="911930";
+   if(airAnimStyle==1) {
+    uint8_t pct=100;
+    if(t<1150){uint16_t ph=t%180;pct=42+(ph<90?ph*58/90:(180-ph)*58/90);}
+    else if(t<2300)pct=((t/90)%2)?100:48;
+    else if(t<3050)pct=((t/120)%2)?68:35;
+    else if(t<3650)pct=((t/130)%2)?100:28;
+    else if(t<3890)pct=((t/80)%2)?18:100;
+    else if(t<4550)pct=25+(t-3890)*75/660;
+    int actual=airTubeBright*pct/100;
+    if(actual!=airLastPulse){airCmd(String("NIXIE:BRIGHT:")+actual);airLastPulse=actual;}
+    if(t<3050){uint32_t step=t<1150?t/180:t<2300?(t-1150)/95:(t-2300)/95;uint8_t phase=step%6,pos=phase<=3?phase:6-phase;d[pos]='9';d[pos+1]='1';d[pos+2]='1';}
+    else if(t<3650){int pos=((t-3050)/130)%2?3:0;d[pos]='9';d[pos+1]='1';d[pos+2]='1';}
+    else if(t<3890){if(((t-3650)/80)%2==0)strcpy(d,"911911");}
+    else if(t<4110)strcpy(d,"900000");else if(t<4330)strcpy(d,"911000");else strcpy(d,target);
+   } else {
+    if(t<800){int step=t/85;d[0]='0'+step%10;d[5]='0'+(10-step%10)%10;}
+    else if(t<1550){int step=(t-800)/85;d[0]='0'+(step+3)%10;d[5]='0'+(step+7)%10;d[1]='0'+(step+5)%10;d[4]='0'+(step+2)%10;}
+    else if(t<3900){int step=(t-1550)/(t<2450?65:85);for(int j=0;j<6;j++)d[j]='0'+(step*(j%2?3:7)+j*3)%10;
+      if(t>=2450){d[0]='9';d[5]='0';}if(t>=2900){d[1]='1';d[4]='3';}if(t>=3450){d[2]='1';d[3]='9';}}
+    else strcpy(d,target);
+   }
+   airDisplay(d);
+  }
+ }
+ if(airECUMode && now-airLastLive>=250) {
+  airLastLive=now;float value=NAN;bool ok=false;
+  switch(airECUMode) {
+   case 1:ok=fresh(trijekt.rpmValid,trijekt.lastRpmMs,RPM_TIMEOUT_MS);value=trijekt.rpm;break;
+   case 2:ok=fresh(trijekt.batteryValid,trijekt.lastBatteryMs);value=trijekt.battery*100;break;
+   case 3:ok=fresh(trijekt.tempValid,trijekt.lastTempMs);value=trijekt.engineTemp*10;break;
+   case 4:ok=fresh(trijekt.throttleValid,trijekt.lastThrottleMs);value=trijekt.throttleDK*10;break;
+   case 5:ok=fresh(trijekt.throttleValid,trijekt.lastThrottleMs);value=trijekt.throttlePedal*10;break;
+  }
+  if(ok && isfinite(value) && value>=0 && value<=999999){char d[7];snprintf(d,sizeof(d),"%06lu",(unsigned long)(value+0.5f));airDisplay(d);}
+  else if(strcmp(airDigits,"------")!=0){airCmd("MODE:CLOCK");strcpy(airDigits,"------");}
+ }
+ if(airStopwatch && now-airLastStop>=40){airLastStop=now;uint32_t cs=(airSWMillis()/10)%600000UL;char d[7];snprintf(d,sizeof(d),"%02lu%02lu%02lu",(unsigned long)(cs/6000),(unsigned long)((cs/100)%60),(unsigned long)(cs%100));airDisplay(d);}
+ if(airFade && now-airLastFade>=35){airLastFade=now;airFadeVal+=airFadeDir*2;if(airFadeVal>=100){airFadeVal=100;airFadeDir=-1;}if(airFadeVal<=0){airFadeVal=0;airFadeDir=1;}airCmd(String("LED:BRIGHT:")+airFadeVal);}
+ static uint32_t lastStatus=0;
+ if(now-lastStatus>=500){lastStatus=now;lvgl_port_lock(-1);airUpdateStatus();lvgl_port_unlock();}
+}
+
+
+// ============================================================
 // SETUP
 // ============================================================
 
@@ -1808,10 +2102,13 @@ void setup()
         originalScreen = lv_scr_act();
     }
 
-    // Create MODE 2 screen with Hollow22 font
+    // Create MODE 3 ECU values screen with Hollow38 font
     createCANScreen();
 
-    // Connect MODE 2 touch button
+    // MODE 2 = Nixie controls; MODE 3 = all ECU CAN values.
+    airCreateScreen();
+
+    // Connect MODE 1 navigation button to MODE 2 Nixie
     bool mode2Found =
         findAndAttachMode2(originalScreen);
 
@@ -1822,7 +2119,7 @@ void setup()
         );
 
         Serial.println(
-            "Connect open_trijekt_mode2() in screens.c"
+            "Connect open_trijekt_mode2() in screens.c (opens Nixie)"
         );
     }
 
@@ -1834,6 +2131,9 @@ void setup()
     lvgl_port_unlock();
 
     Serial.println("LVGL UI READY");
+
+    // Start Nixie UART only after display initialization.
+    airInit();
 
     // ========================================================
     // INITIALIZE CAN
@@ -1931,7 +2231,7 @@ void loop()
         }
 
         // ====================================================
-        // MODE 2 - HOLLOW22 CAN VALUES
+        // MODE 3 - ALL ECU CAN VALUES
         // ====================================================
 
         if (lv_scr_act() == canScreen) {
@@ -1980,6 +2280,10 @@ void loop()
     }
 
     // ========================================================
+    // Nixie UART and animations (no LVGL theme changes).
+    airTick();
+    airWifiTick();
+
     // 7. SHORT DELAY
     // ========================================================
 

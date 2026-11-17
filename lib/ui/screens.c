@@ -56,7 +56,7 @@ static const int UI_GAUGE_W = 760;
 static const int UI_GAUGE_H = 350;
 
 // RPM big label
-static const int UI_RPM_LABEL_X = 350;
+static const int UI_RPM_LABEL_X = 220;
 static const int UI_RPM_LABEL_Y = 98;
 static const int UI_RPM_LABEL_W = 491;
 
@@ -66,10 +66,10 @@ static const int UI_ARC_Y = 0;
 static const int UI_ARC_SIZE = 345;
 
 // RPM bar
-static const int UI_BAR_X = 380;
-static const int UI_BAR_Y = 70;
-static const int UI_BAR_W = 300;
-static const int UI_BAR_H = 20;
+static const int UI_BAR_X = 172;
+static const int UI_BAR_Y = 0;
+static const int UI_BAR_W = 565;
+static const int UI_BAR_H = 70;
 
 // Scale text positions
 static const int UI_SCALE_0_X = 160;
@@ -82,14 +82,14 @@ static const int UI_SCALE_3_X = 45;
 static const int UI_SCALE_3_Y = 50;
 static const int UI_SCALE_4_X = 130;
 static const int UI_SCALE_4_Y = -10;
-static const int UI_SCALE_5_X = 239;
-static const int UI_SCALE_5_Y = 15;
-static const int UI_SCALE_6_X = 280;
-static const int UI_SCALE_6_Y = 90;
-static const int UI_SCALE_7_X = 280;
-static const int UI_SCALE_7_Y = 180;
-static const int UI_SCALE_8_X = 280;
-static const int UI_SCALE_8_Y = 380;
+static const int UI_SCALE_5_X = 254;
+static const int UI_SCALE_5_Y = -10;
+static const int UI_SCALE_6_X = 378;
+static const int UI_SCALE_6_Y = -10;
+static const int UI_SCALE_7_X = 502;
+static const int UI_SCALE_7_Y = -10;
+static const int UI_SCALE_8_X = 626;
+static const int UI_SCALE_8_Y = -10;
 
 // ECU info container
 static const int UI_INFO_W = 450;
@@ -185,7 +185,7 @@ void create_screen_main() {
                                        LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(title1, UI_COLOR_TITLE,
                                         LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_align(title1, LV_ALIGN_TOP_MID, 0, UI_TITLE_Y + 90);
+            lv_obj_align(title1, LV_ALIGN_TOP_MID, 0, UI_TITLE_Y + 155);
         }
 
         // Gauge container
@@ -220,59 +220,72 @@ void create_screen_main() {
                     lv_obj_move_foreground(obj);
                 }
 
-                // RPM Arc - Range 0-40
+                // Dedicated grey track: separate LVGL arc below the live indicator.
+                // Its indicator is hidden, so RPM updates cannot recolor this track.
                 {
-                    lv_obj_t *obj = lv_arc_create(parent_obj);
-                    objects.arc_rpm_0_40 = obj;
-                    lv_obj_set_pos(obj, UI_ARC_X, UI_ARC_Y);
-                    lv_obj_set_size(obj, UI_ARC_SIZE, UI_ARC_SIZE);
-                    lv_arc_set_range(obj, 0, 80);
-                    lv_arc_set_value(obj, 0);
-                    lv_arc_set_bg_start_angle(obj, 90);
-                    lv_arc_set_bg_end_angle(obj, 380);
-                    lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+                    lv_obj_t *track = lv_arc_create(parent_obj);
+                    lv_obj_set_pos(track, UI_ARC_X, UI_ARC_Y);
+                    lv_obj_set_size(track, UI_ARC_SIZE, UI_ARC_SIZE);
+                    lv_obj_clear_flag(track, LV_OBJ_FLAG_CLICKABLE);
+                    lv_arc_set_mode(track, LV_ARC_MODE_NORMAL);
+                    lv_arc_set_range(track, 0, 4000);
+                    lv_arc_set_bg_angles(track, 70, 270);
+                    lv_arc_set_value(track, 0);
+                    lv_obj_set_style_bg_opa(track, LV_OPA_TRANSP, LV_PART_MAIN);
+                    lv_obj_set_style_bg_opa(track, LV_OPA_TRANSP, LV_PART_KNOB);
+                    lv_obj_set_style_arc_width(track, 70, LV_PART_MAIN);
+                    lv_obj_set_style_arc_rounded(track, false, LV_PART_MAIN);
+                    lv_obj_set_style_arc_color(track, lv_color_hex(0x777D84), LV_PART_MAIN);
+                    lv_obj_set_style_arc_opa(track, LV_OPA_COVER, LV_PART_MAIN);
 
-                    // Knob invisible
-                    lv_obj_set_style_bg_opa(obj, 0, LV_PART_KNOB | LV_STATE_DEFAULT);
-
-                    // Background arc
-                    lv_obj_set_style_arc_rounded(obj, true, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_arc_width(obj, 70, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_arc_color(obj, lv_color_hex(0xFF2F3237),
-                                               LV_PART_MAIN | LV_STATE_DEFAULT);
-
-                    // Indicator arc
-                    lv_obj_set_style_arc_rounded(obj, true,
-                                                 LV_PART_INDICATOR | LV_STATE_DEFAULT);
-                    lv_obj_set_style_arc_width(obj, 50,
-                                               LV_PART_INDICATOR | LV_STATE_DEFAULT);
-                    lv_obj_set_style_arc_color(obj, UI_RPM_GREEN,
-                                               LV_PART_INDICATOR | LV_STATE_DEFAULT);
+                    lv_obj_set_style_arc_opa(track, LV_OPA_TRANSP, LV_PART_INDICATOR);
+                    // Keep track above the transparent container background.
+                    // It is created before the live arc, so the indicator remains on top.
                 }
 
-                // RPM Bar - Range 0-80
+                // Live RPM indicator: no background, so grey track stays visible.
+                {
+                    lv_obj_t *arc = lv_arc_create(parent_obj);
+                    objects.arc_rpm_0_40 = arc;
+                    lv_obj_set_pos(arc, UI_ARC_X, UI_ARC_Y);
+                    lv_obj_set_size(arc, UI_ARC_SIZE, UI_ARC_SIZE);
+                    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+                    lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
+                    lv_arc_set_range(arc, 0, 4000);
+                    lv_arc_set_bg_angles(arc, 70, 270);
+                    lv_arc_set_value(arc, 0);
+                    lv_obj_set_style_bg_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
+                    lv_obj_set_style_bg_opa(arc, LV_OPA_TRANSP, LV_PART_KNOB);
+                    lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
+                    lv_obj_set_style_arc_width(arc, 50, LV_PART_INDICATOR);
+                    lv_obj_set_style_arc_color(arc, UI_RPM_GREEN, LV_PART_INDICATOR);
+                    lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
+                    lv_obj_set_style_arc_rounded(arc, false, LV_PART_INDICATOR);
+                }
+
+                // RPM Bar - Range 40-80 (4000-8000 RPM)
                 {
                     lv_obj_t *obj = lv_bar_create(parent_obj);
                     objects.bar_rpm_40_80 = obj;
                     lv_obj_set_pos(obj, UI_BAR_X, UI_BAR_Y);
                     lv_obj_set_size(obj, UI_BAR_W, UI_BAR_H);
 
-                    lv_bar_set_range(obj, 0, 80);
+                    lv_bar_set_range(obj, 0, 4000);
                     lv_bar_set_value(obj, 0, LV_ANIM_OFF);
                     lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
 
                     // Track background
-                    lv_obj_set_style_radius(obj, 20, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_bg_color(obj, lv_color_hex(0xFF2F3237),
+                    lv_obj_set_style_radius(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_bg_color(obj, lv_color_hex(0x777D84),
                                               LV_PART_MAIN | LV_STATE_DEFAULT);
                     lv_obj_set_style_bg_opa(obj, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_pad_all(obj, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
                     lv_obj_set_style_border_color(obj, lv_color_hex(0x666666),
                                                   LV_PART_MAIN | LV_STATE_DEFAULT);
 
                     // Indicator
-                    lv_obj_set_style_radius(obj, 18, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+                    lv_obj_set_style_radius(obj, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
                     lv_obj_set_style_bg_color(obj, UI_RPM_GREEN,
                                               LV_PART_INDICATOR | LV_STATE_DEFAULT);
                     lv_obj_set_style_bg_grad_dir(obj, LV_GRAD_DIR_NONE,

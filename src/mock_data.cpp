@@ -578,16 +578,10 @@ void update_mock_rpm()
     // RPM ARC
     // ========================================================
 
-    int arc_value =
-        (rpm_value * 80) / MAX_RPM;
-
-    if (arc_value > 80)
-        arc_value = 80;
-
-    lv_arc_set_value(
-        objects.arc_rpm_0_40,
-        arc_value
-    );
+    // Arc represents 0..4000 RPM, independent of the horizontal bar.
+    int arc_value = rpm_value;
+    if (arc_value > 4000) arc_value = 4000;
+    lv_arc_set_value(objects.arc_rpm_0_40, arc_value);
 
     // ========================================================
     // ARC COLOR
@@ -622,14 +616,11 @@ void update_mock_rpm()
     // RPM BAR
     // ========================================================
 
-    int bar_value =
-        (rpm_value * 80) / MAX_RPM;
-
-    lv_bar_set_value(
-        objects.bar_rpm_40_80,
-        bar_value,
-        LV_ANIM_OFF
-    );
+    // Bar starts filling only above 4000 RPM.
+    int bar_value = rpm_value - 4000;
+    if (bar_value < 0) bar_value = 0;
+    if (bar_value > 4000) bar_value = 4000;
+    lv_bar_set_value(objects.bar_rpm_40_80, bar_value, LV_ANIM_OFF);
 
     lv_color_t bar_color;
 
