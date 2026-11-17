@@ -20,6 +20,8 @@ uint32_t active_theme_index = 0;
 // -------------------------------------------------------------------
 static int marker_left_active  = 0;
 static int marker_right_active = 0;
+static int marker_mode3_active = 0;
+static int marker_mode4_active = 0;
 
 int get_marker_right_state(void) {
     return marker_right_active;
@@ -30,9 +32,9 @@ extern bool TEST_MODE;
 // -------------------------------------------------------------------
 // Color configuration
 // -------------------------------------------------------------------
-#define UI_COLOR_TITLE      lv_color_hex(0xA4ADB3)
-#define UI_COLOR_RPM_TEXT   lv_color_hex(0xD5DAE0)
-#define UI_COLOR_SCALE_TEXT lv_color_hex(0xD1DDE3)
+#define UI_COLOR_TITLE      lv_color_hex(0x5E5A5A)
+#define UI_COLOR_RPM_TEXT   lv_color_hex(0x5E5A5A)
+#define UI_COLOR_SCALE_TEXT lv_color_hex(0xA8AABD)
 #define UI_COLOR_INFO_TEXT  lv_color_hex(0xA4ADB3)
 
 // Enhanced gauge colors
@@ -40,7 +42,7 @@ extern bool TEST_MODE;
 #define UI_RPM_YELLOW   lv_color_hex(0xFFFF00)  // Yellow 2-4k
 #define UI_RPM_ORANGE   lv_color_hex(0xFFA500)  // Orange 4-6k
 #define UI_RPM_RED      lv_color_hex(0xFF0000)  // Red 6-8k
-#define UI_GAUGE_BG     lv_color_hex(0x2F3237)  // Dark track
+#define UI_GAUGE_BG     lv_color_hex(0x5E5A5A)  // Dark track
 
 // -------------------------------------------------------------------
 // Layout constants
@@ -54,9 +56,20 @@ static const int UI_GAUGE_X = 10;
 static const int UI_GAUGE_Y = 80;
 static const int UI_GAUGE_W = 760;
 static const int UI_GAUGE_H = 350;
-
+// MODE 1
+static const int UI_MODE1_BTN_X = 30;
+static const int UI_MODE1_BTN_Y = 400;
+// MODE 2
+static const int UI_MODE2_BTN_X = 650;
+static const int UI_MODE2_BTN_Y = 180;
+// MODE 3 and MODE 4 (editable screen coordinates)
+static const int UI_MODE3_BTN_X = 95;
+static const int UI_MODE3_BTN_Y = 225;
+static const int UI_MODE4_BTN_X = 650;
+static const int UI_MODE4_BTN_Y = 260;
+static const int UI_MODE_BTN_RADIUS = 20;
 // RPM big label
-static const int UI_RPM_LABEL_X = 220;
+static const int UI_RPM_LABEL_X = 230;
 static const int UI_RPM_LABEL_Y = 98;
 static const int UI_RPM_LABEL_W = 491;
 
@@ -98,9 +111,9 @@ static const int UI_INFO_X = (UI_SCREEN_W - UI_INFO_W) / 2;
 static const int UI_INFO_Y = 340;
 
 // Batt / Lambda positions
-static const int UI_BATT_LABEL_X   = 80;
+static const int UI_BATT_LABEL_X   = 90;
 static const int UI_BATT_LABEL_Y   = -20;
-static const int UI_LAMBDA_LABEL_X = 80;
+static const int UI_LAMBDA_LABEL_X = 90;
 static const int UI_LAMBDA_LABEL_Y = 40;
 
 // Bottom marker buttons
@@ -119,15 +132,17 @@ static const int UI_THR_ABOVE_Y  = UI_MARKER_BTN_Y  +80;
 // -------------------------------------------------------------------
 static lv_obj_t *btn_marker_left  = NULL;
 static lv_obj_t *btn_marker_right = NULL;
+static lv_obj_t *btn_marker_mode3 = NULL;
+static lv_obj_t *btn_marker_mode4 = NULL;
 
 static void marker_btn_update_style(lv_obj_t *btn, int active) {
     if (!btn) return;
 
-    lv_color_t bg = active ? lv_color_hex(0x006400) : lv_color_hex(0x303030);
+    lv_color_t bg = active ? lv_color_hex(0x5D6E5D) : lv_color_hex(0x303030);
 
     lv_obj_set_style_bg_color(btn, bg, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(btn, 20, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(btn, UI_MODE_BTN_RADIUS, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(btn, lv_color_hex(0xFFFFFF),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -148,6 +163,21 @@ static void marker_right_btn_event_cb(lv_event_t *e) {
         marker_right_active = !marker_right_active;
         marker_btn_update_style(btn_marker_right, marker_right_active);
         TEST_MODE = (marker_right_active != 0);
+    }
+}
+
+// Mode 3 / 4 are independent visual toggles. No ECU/Nixie action is assigned.
+static void marker_mode3_btn_event_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        marker_mode3_active = !marker_mode3_active;
+        marker_btn_update_style(btn_marker_mode3, marker_mode3_active);
+    }
+}
+
+static void marker_mode4_btn_event_cb(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        marker_mode4_active = !marker_mode4_active;
+        marker_btn_update_style(btn_marker_mode4, marker_mode4_active);
     }
 }
 
@@ -371,7 +401,7 @@ void create_screen_main() {
             // DISABLE LEFT BUTTON SCROLLING
             lv_obj_clear_flag(btn_marker_left, LV_OBJ_FLAG_SCROLLABLE);
 
-            lv_obj_set_pos(btn_marker_left, UI_MARKER_LEFT_X, UI_MARKER_BTN_Y);
+            lv_obj_set_pos(btn_marker_left, UI_MODE1_BTN_X, UI_MODE1_BTN_Y);
             lv_obj_set_size(btn_marker_left, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
             marker_btn_update_style(btn_marker_left, marker_left_active);
             lv_obj_add_event_cb(btn_marker_left, marker_left_btn_event_cb, LV_EVENT_CLICKED, NULL);
@@ -390,7 +420,7 @@ void create_screen_main() {
             // DISABLE RIGHT BUTTON SCROLLING
             lv_obj_clear_flag(btn_marker_right, LV_OBJ_FLAG_SCROLLABLE);
 
-            lv_obj_set_pos(btn_marker_right, UI_MARKER_RIGHT_X, UI_MARKER_BTN_Y);
+            lv_obj_set_pos(btn_marker_right, UI_MODE2_BTN_X, UI_MODE2_BTN_Y);
             lv_obj_set_size(btn_marker_right, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
             marker_btn_update_style(btn_marker_right, marker_right_active);
             lv_obj_add_event_cb(btn_marker_right, marker_right_btn_event_cb, LV_EVENT_CLICKED, NULL);
@@ -400,8 +430,34 @@ void create_screen_main() {
                                        LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(lblR, UI_COLOR_INFO_TEXT,
                                         LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(lblR, "Mode 2");
+            lv_label_set_text(lblR, "Mode 3");
             lv_obj_center(lblR);
+
+            // Mode 3 button
+            btn_marker_mode3 = lv_btn_create(parent_obj);
+            lv_obj_clear_flag(btn_marker_mode3, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_pos(btn_marker_mode3, UI_MODE3_BTN_X , UI_MODE3_BTN_Y );
+            lv_obj_set_size(btn_marker_mode3, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
+            marker_btn_update_style(btn_marker_mode3, marker_mode3_active);
+            lv_obj_add_event_cb(btn_marker_mode3, marker_mode3_btn_event_cb, LV_EVENT_CLICKED, NULL);
+            lv_obj_t *lbl3 = lv_label_create(btn_marker_mode3);
+            lv_obj_set_style_text_font(lbl3, &ui_font_Hollow38, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(lbl3, UI_COLOR_INFO_TEXT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text(lbl3, "Mode 2");
+            lv_obj_center(lbl3);
+
+            // Mode 4 button
+            btn_marker_mode4 = lv_btn_create(parent_obj);
+            lv_obj_clear_flag(btn_marker_mode4, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_pos(btn_marker_mode4, UI_MODE4_BTN_X, UI_MODE4_BTN_Y);
+            lv_obj_set_size(btn_marker_mode4, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
+            marker_btn_update_style(btn_marker_mode4, marker_mode4_active);
+            lv_obj_add_event_cb(btn_marker_mode4, marker_mode4_btn_event_cb, LV_EVENT_CLICKED, NULL);
+            lv_obj_t *lbl4 = lv_label_create(btn_marker_mode4);
+            lv_obj_set_style_text_font(lbl4, &ui_font_Hollow38, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(lbl4, UI_COLOR_INFO_TEXT, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text(lbl4, "Mode 4");
+            lv_obj_center(lbl4);
         }
 
         // Temperature label
@@ -443,6 +499,8 @@ void change_color_theme(uint32_t theme_index) {
 
     marker_btn_update_style(btn_marker_left, marker_left_active);
     marker_btn_update_style(btn_marker_right, marker_right_active);
+    marker_btn_update_style(btn_marker_mode3, marker_mode3_active);
+    marker_btn_update_style(btn_marker_mode4, marker_mode4_active);
 
     lv_obj_invalidate(objects.main);
 }

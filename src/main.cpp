@@ -1774,7 +1774,7 @@ static void airWifiStart();
 static void airWifiStop();
 static void airWifiTick();
 static const char *airActions[] = {
- "CINEMATIC 1", "CINEMATIC 2 - KITT", "AUTO CINEMATIC 5 MIN",
+ "CINEMATIC SHOW (COMBINED)", "RPM LEFT (TUBE 1)", "AUTO CINEMATIC 5 MIN",
  "RTC CLOCK", "SHOW 911930", "LED ON / OFF", "LED COLOR",
  "LED BRIGHTNESS +10", "LED FADE DEMO", "NIXIE BRIGHTNESS +10",
  "NIXIE BRIGHTNESS -10", "STARTUP REPLAY", "BUZZER ON / OFF",
@@ -1798,7 +1798,7 @@ static void airDisplay(const char *digits) { if(strcmp(airDigits,digits)!=0) { s
 static void airSave() { airPrefs.putBool("led",airLed); airPrefs.putBool("buzzer",airBuzz); airPrefs.putBool("autocine",airAuto); airPrefs.putUChar("color",airColor); airPrefs.putUChar("ledbright",airLedBright); airPrefs.putUChar("tube",airTubeBright); }
 static void airStopSW();
 static void airSetClock() { airStopSW(); airAnimating=false; airStopwatch=false; airECUMode=0; airFade=false; airClock=true; airCmd("MODE:CLOCK"); strcpy(airDigits,"------"); airLastCycle=millis(); }
-static void airStartAnimation(uint8_t style) { airAnimating=true; airAnimStyle=style; airClock=false; airStopwatch=false; airECUMode=0; airFade=false; airLed=false; airAnimStart=millis(); airLastFrame=0; airLastPulse=-1; airCmd("LED:OFF"); airCmd(String("NIXIE:BRIGHT:")+airTubeBright); strcpy(airDigits,"------"); }
+static void airStartAnimation(uint8_t style) { airAnimating=true; airAnimStyle=0; airClock=false; airStopwatch=false; airECUMode=0; airFade=false; airLed=false; airAnimStart=millis(); airLastFrame=0; airLastPulse=-1; airCmd("LED:OFF"); airCmd(String("NIXIE:BRIGHT:")+airTubeBright); strcpy(airDigits,"------"); }
 static uint32_t airSWMillis() { return airSWBase+(airSWRun ? millis()-airSWStart : 0); }
 static void airStopSW() { if(airSWRun) airSWBase+=millis()-airSWStart; airSWRun=false; }
 static void airUpdateStatus() {
@@ -1809,7 +1809,7 @@ static void airUpdateStatus() {
 static void airDoAction(int i) {
  switch(i) {
  case 0: airStartAnimation(0); break;
- case 1: airStartAnimation(1); break;
+ case 1: airAnimating=false; airStopSW(); airStopwatch=false; airClock=false; airECUMode=1; airCmd("DISPLAY:000000"); strcpy(airDigits,"------"); airLastLive=0; break;
  case 2: airAuto=!airAuto; airLastCycle=millis(); airSave(); break;
  case 3: airSetClock(); break;
  case 4: airAnimating=false; airECUMode=0; airStopwatch=false; airClock=false; strcpy(airDigits,"------"); airDisplay("911930"); break;
@@ -1827,7 +1827,7 @@ static void airDoAction(int i) {
  case 16: if(!airStopwatch) {airStopwatch=true;airSWBase=0;airClock=false;airECUMode=0;airAnimating=false;} if(airSWRun)airStopSW();else{airSWStart=millis();airSWRun=true;}break;
  case 17: airStopSW();airSWBase=0;airStopwatch=true;airClock=false;airDisplay("000000");break;
  case 18: airCmd("BUZZ:TONE:1500,250");break;
- case 19:case 20:case 21:case 22:case 23: airAnimating=false;airStopSW();airStopwatch=false;airClock=false;airECUMode=i-18;strcpy(airDigits,"------");airLastLive=0;break;
+ case 19:case 20:case 21:case 22:case 23: airAnimating=false;airStopSW();airStopwatch=false;airClock=false;airECUMode=i-18;airCmd("DISPLAY:000000");strcpy(airDigits,"------");airLastLive=0;break;
  case 24: airSetClock();break;
  case 25: airFade=false;airLed=false;airCmd("LED:OFF");airSave();break;
  case 26: if(canScreen)lv_scr_load(canScreen);break;
@@ -1979,32 +1979,35 @@ static void airTick() {
  // Read optional Mega replies without blocking the existing CAN loop.
  static char rx[96];static uint8_t n=0;
  while(AIRWERK_UART_ENABLED && airSerial.available()) {char c=(char)airSerial.read();if(c=='\n'){rx[n]=0;if(n)Serial.printf("AIR WERK MEGA: %s\n",rx);n=0;}else if(c!='\r'){if(n<sizeof(rx)-1)rx[n++]=c;else n=0;}}
- if(airAuto && airClock && !airAnimating && now-airLastCycle>=300000UL) {static bool nextKitt=false;airStartAnimation(nextKitt?1:0);nextKitt=!nextKitt;}
+ if(airAuto && airClock && !airAnimating && now-airLastCycle>=300000UL) {airStartAnimation(0);}
  if(airAnimating) {
   uint32_t t=now-airAnimStart;
-  if(t>=30000UL) {airAnimating=false;airCmd(String("NIXIE:BRIGHT:")+airTubeBright);airCmd("LED:OFF");airSetClock();}
-  else if(t>=4800UL)airDisplay("911930");
+  if(t>=12000UL) {airAnimating=false;airCmd(String("NIXIE:BRIGHT:")+airTubeBright);airCmd("LED:OFF");airSetClock();}
+  else if(t>=9600UL)airDisplay("911930");
   else if(now-airLastFrame>=85) {
    airLastFrame=now;char d[7]="000000";const char target[]="911930";
-   if(airAnimStyle==1) {
+   // First 4.8 s: cinematic digit scramble; next 4.8 s: KITT sweep.
+   const bool kittPhase = (t >= 4800UL);
+   const uint32_t phaseT = kittPhase ? (t - 4800UL) : t;
+   if(kittPhase) {
     uint8_t pct=100;
-    if(t<1150){uint16_t ph=t%180;pct=42+(ph<90?ph*58/90:(180-ph)*58/90);}
-    else if(t<2300)pct=((t/90)%2)?100:48;
-    else if(t<3050)pct=((t/120)%2)?68:35;
-    else if(t<3650)pct=((t/130)%2)?100:28;
-    else if(t<3890)pct=((t/80)%2)?18:100;
-    else if(t<4550)pct=25+(t-3890)*75/660;
+    if(phaseT<1150){uint16_t ph=phaseT%180;pct=42+(ph<90?ph*58/90:(180-ph)*58/90);}
+    else if(phaseT<2300)pct=((phaseT/90)%2)?100:48;
+    else if(phaseT<3050)pct=((phaseT/120)%2)?68:35;
+    else if(phaseT<3650)pct=((phaseT/130)%2)?100:28;
+    else if(phaseT<3890)pct=((phaseT/80)%2)?18:100;
+    else if(phaseT<4550)pct=25+(phaseT-3890)*75/660;
     int actual=airTubeBright*pct/100;
     if(actual!=airLastPulse){airCmd(String("NIXIE:BRIGHT:")+actual);airLastPulse=actual;}
-    if(t<3050){uint32_t step=t<1150?t/180:t<2300?(t-1150)/95:(t-2300)/95;uint8_t phase=step%6,pos=phase<=3?phase:6-phase;d[pos]='9';d[pos+1]='1';d[pos+2]='1';}
-    else if(t<3650){int pos=((t-3050)/130)%2?3:0;d[pos]='9';d[pos+1]='1';d[pos+2]='1';}
-    else if(t<3890){if(((t-3650)/80)%2==0)strcpy(d,"911911");}
-    else if(t<4110)strcpy(d,"900000");else if(t<4330)strcpy(d,"911000");else strcpy(d,target);
+    if(phaseT<3050){uint32_t step=phaseT<1150?phaseT/180:phaseT<2300?(phaseT-1150)/95:(phaseT-2300)/95;uint8_t phase=step%6,pos=phase<=3?phase:6-phase;d[pos]='9';d[pos+1]='1';d[pos+2]='1';}
+    else if(phaseT<3650){int pos=((phaseT-3050)/130)%2?3:0;d[pos]='9';d[pos+1]='1';d[pos+2]='1';}
+    else if(phaseT<3890){if(((phaseT-3650)/80)%2==0)strcpy(d,"911911");}
+    else if(phaseT<4110)strcpy(d,"900000");else if(phaseT<4330)strcpy(d,"911000");else strcpy(d,target);
    } else {
-    if(t<800){int step=t/85;d[0]='0'+step%10;d[5]='0'+(10-step%10)%10;}
-    else if(t<1550){int step=(t-800)/85;d[0]='0'+(step+3)%10;d[5]='0'+(step+7)%10;d[1]='0'+(step+5)%10;d[4]='0'+(step+2)%10;}
-    else if(t<3900){int step=(t-1550)/(t<2450?65:85);for(int j=0;j<6;j++)d[j]='0'+(step*(j%2?3:7)+j*3)%10;
-      if(t>=2450){d[0]='9';d[5]='0';}if(t>=2900){d[1]='1';d[4]='3';}if(t>=3450){d[2]='1';d[3]='9';}}
+    if(phaseT<800){int step=phaseT/85;d[0]='0'+step%10;d[5]='0'+(10-step%10)%10;}
+    else if(phaseT<1550){int step=(phaseT-800)/85;d[0]='0'+(step+3)%10;d[5]='0'+(step+7)%10;d[1]='0'+(step+5)%10;d[4]='0'+(step+2)%10;}
+    else if(phaseT<3900){int step=(phaseT-1550)/(phaseT<2450?65:85);for(int j=0;j<6;j++)d[j]='0'+(step*(j%2?3:7)+j*3)%10;
+      if(phaseT>=2450){d[0]='9';d[5]='0';}if(phaseT>=2900){d[1]='1';d[4]='3';}if(phaseT>=3450){d[2]='1';d[3]='9';}}
     else strcpy(d,target);
    }
    airDisplay(d);
@@ -2019,8 +2022,13 @@ static void airTick() {
    case 4:ok=fresh(trijekt.throttleValid,trijekt.lastThrottleMs);value=trijekt.throttleDK*10;break;
    case 5:ok=fresh(trijekt.throttleValid,trijekt.lastThrottleMs);value=trijekt.throttlePedal*10;break;
   }
-  if(ok && isfinite(value) && value>=0 && value<=999999){char d[7];snprintf(d,sizeof(d),"%06lu",(unsigned long)(value+0.5f));airDisplay(d);}
-  else if(strcmp(airDigits,"------")!=0){airCmd("MODE:CLOCK");strcpy(airDigits,"------");}
+  if(ok && isfinite(value) && value>=0 && value<=999999){
+   char d[7];
+   if(airECUMode==1) snprintf(d,sizeof(d),"%04lu00",(unsigned long)(value+0.5f)); // Six numeric digits required by Nixie firmware; RPM on tubes 1-4
+   else snprintf(d,sizeof(d),"%06lu",(unsigned long)(value+0.5f));
+   airDisplay(d);
+  }
+  else if(strcmp(airDigits,"------")!=0){airDisplay("000000");strcpy(airDigits,"------");} // Do not switch firmware to clock mode during live ECU
  }
  if(airStopwatch && now-airLastStop>=40){airLastStop=now;uint32_t cs=(airSWMillis()/10)%600000UL;char d[7];snprintf(d,sizeof(d),"%02lu%02lu%02lu",(unsigned long)(cs/6000),(unsigned long)((cs/100)%60),(unsigned long)(cs%100));airDisplay(d);}
  if(airFade && now-airLastFade>=35){airLastFade=now;airFadeVal+=airFadeDir*2;if(airFadeVal>=100){airFadeVal=100;airFadeDir=-1;}if(airFadeVal<=0){airFadeVal=0;airFadeDir=1;}airCmd(String("LED:BRIGHT:")+airFadeVal);}
