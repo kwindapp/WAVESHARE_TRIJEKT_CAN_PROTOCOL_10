@@ -22,6 +22,8 @@ extern const lv_font_t ui_font_km_136;
 
 LV_IMG_DECLARE(background_2);
 LV_IMG_DECLARE(background_1);
+LV_IMG_DECLARE(background_3);
+
 LV_FONT_DECLARE(ui_font_Hollow85);
 LV_FONT_DECLARE(ui_font_Hollow38);
 LV_FONT_DECLARE(ui_font_Hollow22);
@@ -43,6 +45,7 @@ static bool entrance_done = false;
 static int last_tach_active = -1;
 static lv_obj_t *background_img = NULL;
 static bool chrome_background = true;
+static uint32_t air_background_index = 0;
 static lv_obj_t *nav_buttons[4] = {NULL, NULL, NULL, NULL};
 static lv_obj_t *nav_labels[4] = {NULL, NULL, NULL, NULL};
 static lv_obj_t *nav_faces[4] = {NULL, NULL, NULL, NULL};
@@ -211,20 +214,32 @@ static void screen_event(lv_event_t *e) {
 }
 
 /* Tap the background artwork to switch between original and chrome. */
+
 static void apply_background(void) {
-    /* Chrome artwork: lift battery and temperature readouts by 50 px. */
-    if (battery_value) lv_obj_set_y(battery_value, chrome_background ? 330 : 300);
-    if (temp_value) lv_obj_set_y(temp_value, chrome_background ? 330 : 300);
+    chrome_background = (air_background_index != 2);
+
+    int y = (air_background_index == 2) ? 300 : (air_background_index == 1 ? 305 : 330);
+
+    if (battery_value) lv_obj_set_y(battery_value, y);
+    if (temp_value) lv_obj_set_y(temp_value, y);
+
     update_nav_appearance();
+
     if (background_img) {
-        lv_img_set_src(background_img,
-                       chrome_background ? &background_1 : &background_2);
+        const lv_img_dsc_t *img =
+            air_background_index == 0 ? &background_1 :
+            air_background_index == 1 ? &background_2 :
+                                        &background_3;
+
+        lv_img_set_src(background_img, img);
     }
 }
+
 static void background_tap_event(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    chrome_background = !chrome_background;
-    active_theme_index = chrome_background ? 1 : 0;
+    air_background_index = (air_background_index + 1U) % 3U;
+    chrome_background = (air_background_index != 2U);
+    active_theme_index = air_background_index;
     apply_background();
 }
 
@@ -308,6 +323,17 @@ static void update_nav_appearance(void) {
             chrome_background ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         lv_obj_center(label);
     }
+
+    /* AIR WERK: hide button artwork on BG2, keep touch active */
+    for (int i = 0; i < 4; ++i) {
+        if (nav_faces[i]) {
+            if (air_background_index == 1)
+                lv_obj_add_flag(nav_faces[i], LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_clear_flag(nav_faces[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
 }
 
 static void make_touch_button(lv_obj_t *root, int x, int target, const char *title,
@@ -459,7 +485,8 @@ void create_screen_main(void) {
 void tick_screen_main(void) {}
 void change_color_theme(uint32_t theme_index) {
     active_theme_index = theme_index;
-    chrome_background = (theme_index % 2U) != 0U;
+    air_background_index = theme_index % 3U;
+    chrome_background = (air_background_index != 2U);
     apply_background();
     if (objects.main) lv_obj_invalidate(objects.main);
 }

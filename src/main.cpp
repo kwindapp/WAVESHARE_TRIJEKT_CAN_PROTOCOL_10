@@ -731,13 +731,16 @@ static void createSettingsPanel() {
     settingsButton(panel, "AIR WERK  |  SETTINGS", 25, 24, 480, 45, nullptr);
     settingsButton(panel, "< DASHBOARD", 595, 12, 190, 54,
         [](lv_event_t *e) { if (lv_event_get_code(e)==LV_EVENT_PRESSED) open_trijekt_mode1(); });
-    settingsButton(panel, "BACKGROUND 1", 35, 110, 340, 80,
+    settingsButton(panel, "BACKGROUND 1", 35, 100, 340, 65,
         [](lv_event_t *e) { if (lv_event_get_code(e)==LV_EVENT_PRESSED) change_color_theme(0); });
-    settingsButton(panel, "BACKGROUND 2", 425, 110, 340, 80,
+    settingsButton(panel, "BACKGROUND 2", 425, 100, 340, 65,
         [](lv_event_t *e) { if (lv_event_get_code(e)==LV_EVENT_PRESSED) change_color_theme(1); });
-    settingsButton(panel, "NIXIE SETTINGS", 35, 225, 340, 80,
+    settingsButton(panel, "BACKGROUND 3", 35, 175, 340, 65,
+        [](lv_event_t *e) { if (lv_event_get_code(e)==LV_EVENT_PRESSED) change_color_theme(2); });
+    
+    settingsButton(panel, "NIXIE SETTINGS", 35, 255, 340, 70,
         [](lv_event_t *e) { if (lv_event_get_code(e)==LV_EVENT_PRESSED) open_trijekt_mode2(); });
-    settingsButton(panel, "ECU DATA", 425, 225, 340, 80,
+    settingsButton(panel, "ECU DATA", 425, 255, 340, 70,
         [](lv_event_t *e) { if (lv_event_get_code(e)==LV_EVENT_PRESSED) open_trijekt_mode3(); });
     Serial.printf("SETTINGS CREATE done heap=%u psram=%u\n",
                   (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
