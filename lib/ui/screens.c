@@ -274,7 +274,7 @@ static void update_nav_appearance(void) {
         lv_obj_set_style_text_color(label, lv_color_hex(0xF6F4EF), 0);
         /* Original bg: floating text only. Chrome: fully invisible. */
         lv_obj_set_style_text_opa(label,
-            chrome_background ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+            chrome_background ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
         lv_obj_center(label);
     }
 }
