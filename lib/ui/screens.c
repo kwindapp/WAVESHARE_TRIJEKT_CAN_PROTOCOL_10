@@ -1,535 +1,450 @@
+/* RWB JANINE - exact artwork as RGB565 LVGL background, LVGL 8.4, 800x480.
+   Retains EEZ objects and the MODE 2 navigation label expected by main.cpp. */
 
-#include <string.h>
+
+
+
+#include <stdbool.h>
+#include <stdint.h>
 #include <math.h>
+#include <string.h>
 #include <stdio.h>
 
 #include "screens.h"
 #include "images.h"
 #include "fonts.h"
+
+extern const lv_font_t ui_font_km_136;
 #include "actions.h"
 #include "vars.h"
 #include "styles.h"
 #include "ui.h"
 
+LV_IMG_DECLARE(background_2);
+LV_IMG_DECLARE(background_1);
+LV_FONT_DECLARE(ui_font_Hollow85);
+LV_FONT_DECLARE(ui_font_Hollow38);
+LV_FONT_DECLARE(ui_font_Hollow22);
+extern bool TEST_MODE;
+extern void open_trijekt_mode2(void);
+extern void open_trijekt_mode3(void);
 objects_t objects;
 lv_obj_t *tick_value_change_obj;
 uint32_t active_theme_index = 0;
+uint32_t theme_colors[1][2] = {{0xffff334b, 0xff030408}};
 
-// -------------------------------------------------------------------
-// Internal button state
-// -------------------------------------------------------------------
-static int marker_left_active  = 0;
-static int marker_right_active = 0;
-static int marker_mode3_active = 0;
-static int marker_mode4_active = 0;
+#define TACH_SEGMENTS 80
+static lv_obj_t *tach_segments[TACH_SEGMENTS];
+static lv_point_t tach_points[TACH_SEGMENTS][2];
+static lv_obj_t *battery_value = NULL;
+static lv_obj_t *temp_value = NULL;
+static bool entrance_done = false;
+static int last_tach_active = -1;
+static lv_obj_t *background_img = NULL;
+static bool chrome_background = true;
+static lv_obj_t *nav_buttons[4] = {NULL, NULL, NULL, NULL};
+static lv_obj_t *nav_labels[4] = {NULL, NULL, NULL, NULL};
+static lv_obj_t *nav_faces[4] = {NULL, NULL, NULL, NULL};
+static const uint32_t nav_accents[4] = {0x22DFFF, 0x22DFFF, 0xFF3752, 0xFF9A35};
+static void update_nav_appearance(void);
+static lv_obj_t *rpm_pointer = NULL;
+static lv_point_t rpm_pointer_points[2];
 
-int get_marker_right_state(void) {
-    return marker_right_active;
-}
+/* Four fixed RPM digit slots. Keep objects.label_rpm as the live-data source. */
+#define RPM_LABEL_Y 135
+#define RPM_RISE_PIXELS 100
+#define RPM_DIGIT_X 185
+#define RPM_DIGIT_STEP 108
+#define RPM_DIGIT_WIDTH 112
+static lv_obj_t *rpm_digits[4] = {NULL, NULL, NULL, NULL};
+static char rpm_previous[5] = "";
 
-extern bool TEST_MODE;
+/* Triple-layer neon shadows: separate text labels, not LVGL box shadows. */
+#define GLOW_LAYERS 3
+static lv_obj_t *rpm_glow[4][GLOW_LAYERS] = {{NULL}};
+static lv_obj_t *batt_glow[GLOW_LAYERS] = {NULL};
+static lv_obj_t *temp_glow[GLOW_LAYERS] = {NULL};
 
-// -------------------------------------------------------------------
-// Color configuration
-// -------------------------------------------------------------------
-#define UI_COLOR_TITLE      lv_color_hex(0x5E5A5A)
-#define UI_COLOR_RPM_TEXT   lv_color_hex(0x5E5A5A)
-#define UI_COLOR_SCALE_TEXT lv_color_hex(0xA8AABD)
-#define UI_COLOR_INFO_TEXT  lv_color_hex(0xA4ADB3)
-
-// Enhanced gauge colors
-#define UI_RPM_GREEN    lv_color_hex(0x00FF00)  // Green 0-2k
-#define UI_RPM_YELLOW   lv_color_hex(0xFFFF00)  // Yellow 2-4k
-#define UI_RPM_ORANGE   lv_color_hex(0xFFA500)  // Orange 4-6k
-#define UI_RPM_RED      lv_color_hex(0xFF0000)  // Red 6-8k
-#define UI_GAUGE_BG     lv_color_hex(0x5E5A5A)  // Dark track
-
-// -------------------------------------------------------------------
-// Layout constants
-// -------------------------------------------------------------------
-static const int UI_SCREEN_W = 800;
-static const int UI_SCREEN_H = 480;
-static const int UI_TITLE_Y = 5;
-
-// Gauge container
-static const int UI_GAUGE_X = 10;
-static const int UI_GAUGE_Y = 80;
-static const int UI_GAUGE_W = 760;
-static const int UI_GAUGE_H = 350;
-// MODE 1
-static const int UI_MODE1_BTN_X = 30;
-static const int UI_MODE1_BTN_Y = 400;
-// MODE 2
-static const int UI_MODE2_BTN_X = 650;
-static const int UI_MODE2_BTN_Y = 180;
-// MODE 3 and MODE 4 (editable screen coordinates)
-static const int UI_MODE3_BTN_X = 95;
-static const int UI_MODE3_BTN_Y = 225;
-static const int UI_MODE4_BTN_X = 650;
-static const int UI_MODE4_BTN_Y = 260;
-static const int UI_MODE_BTN_RADIUS = 20;
-// RPM big label
-static const int UI_RPM_LABEL_X = 230;
-static const int UI_RPM_LABEL_Y = 98;
-static const int UI_RPM_LABEL_W = 491;
-
-// RPM arc
-static const int UI_ARC_X = 0;
-static const int UI_ARC_Y = 0;
-static const int UI_ARC_SIZE = 345;
-
-// RPM bar
-static const int UI_BAR_X = 172;
-static const int UI_BAR_Y = 0;
-static const int UI_BAR_W = 565;
-static const int UI_BAR_H = 70;
-
-// Scale text positions
-static const int UI_SCALE_0_X = 160;
-static const int UI_SCALE_0_Y = 275;
-static const int UI_SCALE_1_X = 73;
-static const int UI_SCALE_1_Y = 238;
-static const int UI_SCALE_2_X = 20;
-static const int UI_SCALE_2_Y = 155;
-static const int UI_SCALE_3_X = 45;
-static const int UI_SCALE_3_Y = 50;
-static const int UI_SCALE_4_X = 130;
-static const int UI_SCALE_4_Y = -10;
-static const int UI_SCALE_5_X = 254;
-static const int UI_SCALE_5_Y = -10;
-static const int UI_SCALE_6_X = 378;
-static const int UI_SCALE_6_Y = -10;
-static const int UI_SCALE_7_X = 502;
-static const int UI_SCALE_7_Y = -10;
-static const int UI_SCALE_8_X = 626;
-static const int UI_SCALE_8_Y = -10;
-
-// ECU info container
-static const int UI_INFO_W = 450;
-static const int UI_INFO_H = 165;
-static const int UI_INFO_X = (UI_SCREEN_W - UI_INFO_W) / 2;
-static const int UI_INFO_Y = 340;
-
-// Batt / Lambda positions
-static const int UI_BATT_LABEL_X   = 90;
-static const int UI_BATT_LABEL_Y   = -20;
-static const int UI_LAMBDA_LABEL_X = 90;
-static const int UI_LAMBDA_LABEL_Y = 40;
-
-// Bottom marker buttons
-static const int UI_MARKER_BTN_W = 120;
-static const int UI_MARKER_BTN_H = 60;
-static const int UI_MARKER_BTN_Y = UI_SCREEN_H - UI_MARKER_BTN_H - 20;
-static const int UI_MARKER_LEFT_X  = 30;
-static const int UI_MARKER_RIGHT_X = UI_SCREEN_W - UI_MARKER_BTN_W - 30;
-
-// Temp label
-static const int UI_THR_ABOVE_X  = UI_MARKER_RIGHT_X + 50;
-static const int UI_THR_ABOVE_Y  = UI_MARKER_BTN_Y  +80;
-
-// -------------------------------------------------------------------
-// Marker button style helper
-// -------------------------------------------------------------------
-static lv_obj_t *btn_marker_left  = NULL;
-static lv_obj_t *btn_marker_right = NULL;
-static lv_obj_t *btn_marker_mode3 = NULL;
-static lv_obj_t *btn_marker_mode4 = NULL;
-
-static void marker_btn_update_style(lv_obj_t *btn, int active) {
-    if (!btn) return;
-
-    lv_color_t bg = active ? lv_color_hex(0x5D6E5D) : lv_color_hex(0x303030);
-
-    lv_obj_set_style_bg_color(btn, bg, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(btn, UI_MODE_BTN_RADIUS, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(btn, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(btn, lv_color_hex(0xFFFFFF),
-                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-}
-
-// -------------------------------------------------------------------
-// Marker button callbacks
-// -------------------------------------------------------------------
-static void marker_left_btn_event_cb(lv_event_t *e) {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        marker_left_active = !marker_left_active;
-        marker_btn_update_style(btn_marker_left, marker_left_active);
+static void make_value_glow(lv_obj_t *source, lv_obj_t **layers) {
+    static const int dx[GLOW_LAYERS] = {2, 4, 7};
+    static const int dy[GLOW_LAYERS] = {3, 5, 8};
+    static const uint32_t colors[GLOW_LAYERS] = {0xF9F4E8, 0x37D8FF, 0x1264DF};
+    static const lv_opa_t opas[GLOW_LAYERS] = {LV_OPA_80, LV_OPA_50, LV_OPA_30};
+    lv_obj_t *parent = lv_obj_get_parent(source);
+    for (int i = 0; i < GLOW_LAYERS; ++i) {
+        lv_obj_t *l = lv_label_create(parent);
+        layers[i] = l;
+        lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(l, lv_obj_get_width(source));
+        lv_obj_set_style_text_font(l, lv_obj_get_style_text_font(source, LV_PART_MAIN), LV_PART_MAIN);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_text_color(l, lv_color_hex(colors[i]), LV_PART_MAIN);
+        lv_obj_set_style_text_opa(l, opas[i], LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(l, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_clear_flag(l, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_pos(l, lv_obj_get_x(source) + dx[i], lv_obj_get_y(source) + dy[i]);
+        lv_label_set_text(l, lv_label_get_text(source));
+        /* Keep each glow underneath the real digits, inside the same parent. */
+        lv_obj_move_background(l);
     }
 }
 
-static void marker_right_btn_event_cb(lv_event_t *e) {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        marker_right_active = !marker_right_active;
-        marker_btn_update_style(btn_marker_right, marker_right_active);
-        TEST_MODE = (marker_right_active != 0);
+static void sync_value_glow(lv_obj_t *source, lv_obj_t **layers) {
+    static const int dx[GLOW_LAYERS] = {2, 4, 7};
+    static const int dy[GLOW_LAYERS] = {3, 5, 8};
+    if (!source) return;
+    const char *value = lv_label_get_text(source);
+    for (int i = 0; i < GLOW_LAYERS; ++i) {
+        lv_obj_t *l = layers[i];
+        if (!l) continue;
+        if (strcmp(lv_label_get_text(l), value) != 0) lv_label_set_text(l, value);
+        lv_obj_set_pos(l, lv_obj_get_x(source) + dx[i], lv_obj_get_y(source) + dy[i]);
     }
 }
 
-// Mode 3 / 4 are independent visual toggles. No ECU/Nixie action is assigned.
-static void marker_mode3_btn_event_cb(lv_event_t *e) {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        marker_mode3_active = !marker_mode3_active;
-        marker_btn_update_style(btn_marker_mode3, marker_mode3_active);
+static void glow_sync_timer(lv_timer_t *timer) {
+    (void)timer;
+    for (int i = 0; i < 4; ++i) sync_value_glow(rpm_digits[i], rpm_glow[i]);
+    sync_value_glow(battery_value, batt_glow);
+    sync_value_glow(temp_value, temp_glow);
+}
+
+static void rpm_anim_y(void *obj, int32_t y) {
+    lv_obj_set_y((lv_obj_t *)obj, (lv_coord_t)y);
+}
+static void rpm_sync_digits(lv_timer_t *timer) {
+    (void)timer;
+    if (!objects.label_rpm) return;
+    const char *s = lv_label_get_text(objects.label_rpm);
+    if (!s) return;
+    /* Preserve leading zeros and show exactly four fixed-position digits. */
+    char formatted[5] = "0000";
+    unsigned long value = 0;
+    bool found = false;
+    for (const char *p = s; *p; ++p) {
+        if (*p >= '0' && *p <= '9') {
+            found = true;
+            value = (value * 10 + (unsigned long)(*p - '0')) % 10000UL;
+        }
+    }
+    if (!found) return;
+    snprintf(formatted, sizeof(formatted), "%04lu", value);
+    if (strcmp(formatted, rpm_previous) == 0) return;
+    memcpy(rpm_previous, formatted, sizeof(formatted));
+    for (int i = 0; i < 4; ++i) {
+        if (rpm_digits[i]) {
+            char digit[2] = {formatted[i], '\0'};
+            lv_label_set_text(rpm_digits[i], digit);
+        }
+    }
+}
+static void rpm_start_entrance(void) {
+    for (int i = 0; i < 4; ++i) {
+        if (!rpm_digits[i]) continue;
+        lv_anim_del(rpm_digits[i], rpm_anim_y);
+        lv_obj_set_y(rpm_digits[i], RPM_LABEL_Y + RPM_RISE_PIXELS);
+        lv_anim_t anim;
+        lv_anim_init(&anim);
+        lv_anim_set_var(&anim, rpm_digits[i]);
+        lv_anim_set_exec_cb(&anim, rpm_anim_y);
+        lv_anim_set_values(&anim, RPM_LABEL_Y + RPM_RISE_PIXELS, RPM_LABEL_Y);
+        lv_anim_set_time(&anim, 1650);
+        lv_anim_set_delay(&anim, 580);
+        lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+        lv_anim_start(&anim);
     }
 }
 
-static void marker_mode4_btn_event_cb(lv_event_t *e) {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
-        marker_mode4_active = !marker_mode4_active;
-        marker_btn_update_style(btn_marker_mode4, marker_mode4_active);
+static lv_obj_t *make_label(lv_obj_t *parent, const char *s, int x, int y,
+                            int w, const lv_font_t *font, uint32_t color) {
+    lv_obj_t *l = lv_label_create(parent);
+    lv_label_set_text(l, s);
+    lv_obj_set_pos(l, x, y);
+    lv_obj_set_width(l, w);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_font(l, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(l, lv_color_hex(color), LV_PART_MAIN);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(l, LV_OPA_TRANSP, LV_PART_MAIN);
+    return l;
+}
+
+static void anim_x(void *o, int32_t v) { lv_obj_set_x((lv_obj_t *)o, (lv_coord_t)v); }
+static void animate_from_center(lv_obj_t *o, int end_x, uint32_t delay) {
+    if (!o) return;
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, o);
+    lv_anim_set_exec_cb(&a, anim_x);
+    lv_anim_set_values(&a, 400 - lv_obj_get_width(o) / 2, end_x);
+    lv_anim_set_time(&a, 900);
+    lv_anim_set_delay(&a, delay);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
+
+static void screen_event(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED) {
+        rpm_start_entrance();
+        if (!entrance_done) {
+            entrance_done = true;
+            animate_from_center(battery_value, 164, 200);
+            animate_from_center(temp_value, 551, 200);
+        }
     }
 }
 
-// -------------------------------------------------------------------
-// CREATE MAIN SCREEN
-// -------------------------------------------------------------------
-void create_screen_main() {
-    lv_obj_t *obj = lv_obj_create(0);
-    objects.main = obj;
+/* Tap the background artwork to switch between original and chrome. */
+static void apply_background(void) {
+    /* Chrome artwork: lift battery and temperature readouts by 50 px. */
+    if (battery_value) lv_obj_set_y(battery_value, chrome_background ? 330 : 300);
+    if (temp_value) lv_obj_set_y(temp_value, chrome_background ? 330 : 300);
+    update_nav_appearance();
+    if (background_img) {
+        lv_img_set_src(background_img,
+                       chrome_background ? &background_1 : &background_2);
+    }
+}
+static void background_tap_event(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    chrome_background = !chrome_background;
+    active_theme_index = chrome_background ? 1 : 0;
+    apply_background();
+}
 
-    // DISABLE MAIN SCREEN SCROLLING
-    lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+static void nav_event(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) open_trijekt_mode2();
+}
 
-    lv_obj_set_pos(obj, 0, 0);
-    lv_obj_set_size(obj, UI_SCREEN_W, UI_SCREEN_H);
-    lv_obj_set_style_bg_color(obj, lv_color_hex(theme_colors[active_theme_index][1]),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
+/* A lightweight segmented highlight follows the curved printed tachometer.
+   Background artwork remains unchanged; only the illuminated trace moves. */
+/* Tachometer follows the artwork's curved 0-8000 scale.
+   Update only segments that actually changed, avoiding 80 style writes each frame. */
+void rwb_set_tach_rpm(uint16_t rpm) {
+    if (rpm > 8000) rpm = 8000;
+    int active = ((uint32_t)rpm * TACH_SEGMENTS + 7999) / 8000;
+    if (active == last_tach_active) return;
+    int old = last_tach_active < 0 ? 0 : last_tach_active;
+    int lo = old < active ? old : active;
+    int hi = old > active ? old : active;
+    for (int i = lo; i < hi; ++i) {
+        if (!tach_segments[i]) continue;
+        lv_obj_set_style_line_opa(tach_segments[i], i < active ? LV_OPA_COVER : LV_OPA_TRANSP, LV_PART_MAIN);
+    }
+    last_tach_active = active;
+    if (rpm_pointer) {
+        /* Moving bright pointer at the leading edge of the illuminated scale. */
+        float u = (float)rpm / 8000.0f;
+        float x = 81.0f + 637.0f * u;
+        float dx = x - 400.0f;
+        float y = 132.0f + 0.00042f * dx * dx;
+        rpm_pointer_points[0] = (lv_point_t){(lv_coord_t)x, (lv_coord_t)(y - 9)};
+        rpm_pointer_points[1] = (lv_point_t){(lv_coord_t)x, (lv_coord_t)(y + 7)};
+        lv_line_set_points(rpm_pointer, rpm_pointer_points, 2);
+        lv_obj_set_style_line_color(rpm_pointer, lv_color_hex(rpm >= 6500 ? 0xFF324D : 0xF8FDFF), LV_PART_MAIN);
+        if (rpm == 0) lv_obj_add_flag(rpm_pointer, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(rpm_pointer, LV_OBJ_FLAG_HIDDEN);
+    }
+}
 
-    {
-        lv_obj_t *parent_obj = obj;
+static void touch_nav_event(lv_event_t *e) {
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    int target = (int)(intptr_t)lv_event_get_user_data(e);
+    if (target == 1) {
+        /* Dashboard is MODE 1; already active when this button is visible. */
+        if (objects.main && lv_scr_act() != objects.main) lv_scr_load(objects.main);
+    }
+    else if (target == 2 || target == 4) open_trijekt_mode2();
+    else if (target == 3) open_trijekt_mode3();
+}
 
-        // Top title labels
-        {
-            lv_obj_t *title = lv_label_create(parent_obj);
-            lv_label_set_text(title, "RWB JANINE DASH");
-            lv_obj_set_style_text_font(title, &ui_font_Hollow85,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(title, UI_COLOR_TITLE,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_align(title, LV_ALIGN_TOP_MID, 0, UI_TITLE_Y);
+/* Wide invisible touch targets; artwork-matched button faces on original bg only. */
+static void update_nav_appearance(void) {
+    for (int i = 0; i < 4; ++i) {
+        lv_obj_t *face = nav_faces[i];
+        lv_obj_t *label = nav_labels[i];
+        if (!face || !label) continue;
+        /* Always transparent: the outer hit area handles the touch. */
+        lv_obj_set_style_bg_opa(face, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(face, 0, 0);
+        lv_obj_set_style_border_opa(face, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(face, 0, 0);
+        lv_obj_set_style_shadow_opa(face, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_text_font(label, &ui_font_Hollow38, 0);
+        lv_obj_set_style_text_color(label, lv_color_hex(0xF6F4EF), 0);
+        /* Original bg: floating text only. Chrome: fully invisible. */
+        lv_obj_set_style_text_opa(label,
+            chrome_background ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+        lv_obj_center(label);
+    }
+}
 
-            lv_obj_t *title1 = lv_label_create(parent_obj);
-            lv_label_set_text(title1, "RAUH Welt BEGRIFF");
-            lv_obj_set_style_text_font(title1, &ui_font_t20,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(title1, UI_COLOR_TITLE,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_align(title1, LV_ALIGN_TOP_MID, 0, UI_TITLE_Y + 155);
-        }
+static void make_touch_button(lv_obj_t *root, int x, int target, const char *title,
+                              const char *sub, uint32_t accent) {
+    /* Entire 174x51 zone is clickable; the 158x34 face sits neatly inside. */
+    lv_obj_t *hit = lv_obj_create(root);
+    lv_obj_remove_style_all(hit);
+    lv_obj_set_pos(hit, x, 428);
+    lv_obj_set_size(hit, 174, 52);
+    lv_obj_set_style_pad_all(hit, 0, 0);
+    lv_obj_clear_flag(hit, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(hit, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(hit, touch_nav_event, LV_EVENT_CLICKED, (void *)(intptr_t)target);
 
-        // Gauge container
-        {
-            lv_obj_t *obj = lv_obj_create(parent_obj);
-            objects.container_gauge = obj;
+    lv_obj_t *face = lv_obj_create(hit);
+    lv_obj_remove_style_all(face);
+    lv_obj_set_pos(face, 8, 8);
+    lv_obj_set_size(face, 158, 34);
+    lv_obj_clear_flag(face, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_all(face, 0, 0);
 
-            // DISABLE GAUGE CONTAINER SCROLLING
-            lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *label = lv_label_create(face);
+    lv_label_set_text(label, title);
+    lv_obj_set_style_text_font(label, &ui_font_Hollow22, 0);
+    lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_center(label);
 
-            lv_obj_set_pos(obj, UI_GAUGE_X, UI_GAUGE_Y);
-            lv_obj_set_size(obj, UI_GAUGE_W, UI_GAUGE_H);
-            lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_opa(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    /* Keep MODE 2 text discoverable for the existing main.cpp hook. */
+    if (target == 2) {
+        lv_obj_t *compat = lv_label_create(hit);
+        lv_label_set_text(compat, "MODE 2");
+        lv_obj_set_style_text_opa(compat, LV_OPA_TRANSP, 0);
+        lv_obj_clear_flag(compat, LV_OBJ_FLAG_CLICKABLE);
+    }
+    if (target >= 1 && target <= 4) {
+        nav_buttons[target - 1] = hit;
+        nav_faces[target - 1] = face;
+        nav_labels[target - 1] = label;
+    }
+    (void)sub;
+    (void)accent;
+}
 
-            {
-                lv_obj_t *parent_obj = obj;
+void create_screen_main(void) {
+    lv_obj_t *root = lv_obj_create(NULL);
+    objects.main = root;
+    lv_obj_set_size(root, 800, 480);
+    lv_obj_set_style_bg_color(root, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(root, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(root, screen_event, LV_EVENT_SCREEN_LOADED, NULL);
 
-                // RPM label
-                {
-                    lv_obj_t *obj = lv_label_create(parent_obj);
-                    objects.label_rpm = obj;
-                    lv_obj_set_pos(obj, UI_RPM_LABEL_X, UI_RPM_LABEL_Y);
-                    lv_obj_set_size(obj, UI_RPM_LABEL_W, LV_SIZE_CONTENT);
-                    lv_obj_set_style_text_font(obj, &ui_font_km_160,
-                                               LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_color(obj, UI_COLOR_RPM_TEXT,
-                                                LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text(obj, "0000");
+    lv_obj_t *background = lv_img_create(root);
+    background_img = background;
+    apply_background();
+    lv_obj_set_pos(background, 0, 0);
+    lv_obj_add_flag(background, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(background, background_tap_event, LV_EVENT_CLICKED, NULL);
 
-                    lv_obj_move_foreground(obj);
-                }
-
-                // Dedicated grey track: separate LVGL arc below the live indicator.
-                // Its indicator is hidden, so RPM updates cannot recolor this track.
-                {
-                    lv_obj_t *track = lv_arc_create(parent_obj);
-                    lv_obj_set_pos(track, UI_ARC_X, UI_ARC_Y);
-                    lv_obj_set_size(track, UI_ARC_SIZE, UI_ARC_SIZE);
-                    lv_obj_clear_flag(track, LV_OBJ_FLAG_CLICKABLE);
-                    lv_arc_set_mode(track, LV_ARC_MODE_NORMAL);
-                    lv_arc_set_range(track, 0, 4000);
-                    lv_arc_set_bg_angles(track, 70, 270);
-                    lv_arc_set_value(track, 0);
-                    lv_obj_set_style_bg_opa(track, LV_OPA_TRANSP, LV_PART_MAIN);
-                    lv_obj_set_style_bg_opa(track, LV_OPA_TRANSP, LV_PART_KNOB);
-                    lv_obj_set_style_arc_width(track, 70, LV_PART_MAIN);
-                    lv_obj_set_style_arc_rounded(track, false, LV_PART_MAIN);
-                    lv_obj_set_style_arc_color(track, lv_color_hex(0x777D84), LV_PART_MAIN);
-                    lv_obj_set_style_arc_opa(track, LV_OPA_COVER, LV_PART_MAIN);
-
-                    lv_obj_set_style_arc_opa(track, LV_OPA_TRANSP, LV_PART_INDICATOR);
-                    // Keep track above the transparent container background.
-                    // It is created before the live arc, so the indicator remains on top.
-                }
-
-                // Live RPM indicator: no background, so grey track stays visible.
-                {
-                    lv_obj_t *arc = lv_arc_create(parent_obj);
-                    objects.arc_rpm_0_40 = arc;
-                    lv_obj_set_pos(arc, UI_ARC_X, UI_ARC_Y);
-                    lv_obj_set_size(arc, UI_ARC_SIZE, UI_ARC_SIZE);
-                    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
-                    lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
-                    lv_arc_set_range(arc, 0, 4000);
-                    lv_arc_set_bg_angles(arc, 70, 270);
-                    lv_arc_set_value(arc, 0);
-                    lv_obj_set_style_bg_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
-                    lv_obj_set_style_bg_opa(arc, LV_OPA_TRANSP, LV_PART_KNOB);
-                    lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
-                    lv_obj_set_style_arc_width(arc, 50, LV_PART_INDICATOR);
-                    lv_obj_set_style_arc_color(arc, UI_RPM_GREEN, LV_PART_INDICATOR);
-                    lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
-                    lv_obj_set_style_arc_rounded(arc, false, LV_PART_INDICATOR);
-                }
-
-                // RPM Bar - Range 40-80 (4000-8000 RPM)
-                {
-                    lv_obj_t *obj = lv_bar_create(parent_obj);
-                    objects.bar_rpm_40_80 = obj;
-                    lv_obj_set_pos(obj, UI_BAR_X, UI_BAR_Y);
-                    lv_obj_set_size(obj, UI_BAR_W, UI_BAR_H);
-
-                    lv_bar_set_range(obj, 0, 4000);
-                    lv_bar_set_value(obj, 0, LV_ANIM_OFF);
-                    lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-
-                    // Track background
-                    lv_obj_set_style_radius(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_bg_color(obj, lv_color_hex(0x777D84),
-                                              LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_bg_opa(obj, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_border_color(obj, lv_color_hex(0x666666),
-                                                  LV_PART_MAIN | LV_STATE_DEFAULT);
-
-                    // Indicator
-                    lv_obj_set_style_radius(obj, 0, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-                    lv_obj_set_style_bg_color(obj, UI_RPM_GREEN,
-                                              LV_PART_INDICATOR | LV_STATE_DEFAULT);
-                    lv_obj_set_style_bg_grad_dir(obj, LV_GRAD_DIR_NONE,
-                                                 LV_PART_INDICATOR | LV_STATE_DEFAULT);
-                    lv_obj_set_style_bg_opa(obj, 255, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-                }
-
-                // Scale numbers
-                struct {
-                    int x, y;
-                    char *text;
-                } scale_points[] = {
-                    {UI_SCALE_0_X, UI_SCALE_0_Y, "0"},
-                    {UI_SCALE_1_X, UI_SCALE_1_Y, "1"},
-                    {UI_SCALE_2_X, UI_SCALE_2_Y, "2"},
-                    {UI_SCALE_3_X, UI_SCALE_3_Y, "3"},
-                    {UI_SCALE_4_X, UI_SCALE_4_Y, "4"},
-                    {UI_SCALE_5_X, UI_SCALE_5_Y, "5"},
-                    {UI_SCALE_6_X, UI_SCALE_6_Y, "6"},
-                    {UI_SCALE_7_X, UI_SCALE_7_Y, "7"},
-                    {UI_SCALE_8_X, UI_SCALE_8_Y, "8"}
-                };
-
-                for(int i = 0; i < 9; i++) {
-                    lv_obj_t *obj = lv_label_create(parent_obj);
-                    lv_obj_set_pos(obj, scale_points[i].x, scale_points[i].y);
-                    lv_obj_set_style_text_font(obj, &ui_font_Hollow85,
-                                               LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_color(obj, UI_COLOR_SCALE_TEXT,
-                                                LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text(obj, scale_points[i].text);
-                }
-            }
-        }
-
-        // ECU Info Container
-        {
-            lv_obj_t *obj = lv_obj_create(parent_obj);
-            objects.container_throttle = obj;
-
-            // DISABLE ECU INFO CONTAINER SCROLLING
-            lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-
-            lv_obj_set_pos(obj, UI_INFO_X, UI_INFO_Y);
-            lv_obj_set_size(obj, UI_INFO_W, UI_INFO_H);
-            lv_obj_set_style_bg_opa(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-            {
-                lv_obj_t *parent_obj = obj;
-
-                // Battery voltage
-                {
-                    lv_obj_t *obj = lv_label_create(parent_obj);
-                    objects.label_batt = obj;
-                    lv_obj_set_pos(obj, UI_BATT_LABEL_X, UI_BATT_LABEL_Y);
-                    lv_obj_set_style_text_font(obj, &ui_font_Hollow85,
-                                               LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_color(obj, UI_COLOR_INFO_TEXT,
-                                                LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text(obj, "Batt --.-V");
-                }
-
-                // Lambda value
-                {
-                    lv_obj_t *obj = lv_label_create(parent_obj);
-                    objects.label_lambda = obj;
-                    lv_obj_set_pos(obj, UI_LAMBDA_LABEL_X, UI_LAMBDA_LABEL_Y);
-                    lv_obj_set_style_text_font(obj, &ui_font_Hollow85,
-                                               LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_color(obj, UI_COLOR_INFO_TEXT,
-                                                LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text(obj, "Lambda ---");
-                }
-            }
-        }
-
-        // Marker buttons
-        {
-            // Left marker button
-            btn_marker_left = lv_btn_create(parent_obj);
-
-            // DISABLE LEFT BUTTON SCROLLING
-            lv_obj_clear_flag(btn_marker_left, LV_OBJ_FLAG_SCROLLABLE);
-
-            lv_obj_set_pos(btn_marker_left, UI_MODE1_BTN_X, UI_MODE1_BTN_Y);
-            lv_obj_set_size(btn_marker_left, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
-            marker_btn_update_style(btn_marker_left, marker_left_active);
-            lv_obj_add_event_cb(btn_marker_left, marker_left_btn_event_cb, LV_EVENT_CLICKED, NULL);
-
-            lv_obj_t *lblL = lv_label_create(btn_marker_left);
-            lv_obj_set_style_text_font(lblL, &ui_font_Hollow38,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(lblL, UI_COLOR_INFO_TEXT,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(lblL, "Mode 1");
-            lv_obj_center(lblL);
-
-            // Right marker button
-            btn_marker_right = lv_btn_create(parent_obj);
-
-            // DISABLE RIGHT BUTTON SCROLLING
-            lv_obj_clear_flag(btn_marker_right, LV_OBJ_FLAG_SCROLLABLE);
-
-            lv_obj_set_pos(btn_marker_right, UI_MODE2_BTN_X, UI_MODE2_BTN_Y);
-            lv_obj_set_size(btn_marker_right, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
-            marker_btn_update_style(btn_marker_right, marker_right_active);
-            lv_obj_add_event_cb(btn_marker_right, marker_right_btn_event_cb, LV_EVENT_CLICKED, NULL);
-
-            lv_obj_t *lblR = lv_label_create(btn_marker_right);
-            lv_obj_set_style_text_font(lblR, &ui_font_Hollow38,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(lblR, UI_COLOR_INFO_TEXT,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(lblR, "Mode 3");
-            lv_obj_center(lblR);
-
-            // Mode 3 button
-            btn_marker_mode3 = lv_btn_create(parent_obj);
-            lv_obj_clear_flag(btn_marker_mode3, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_set_pos(btn_marker_mode3, UI_MODE3_BTN_X , UI_MODE3_BTN_Y );
-            lv_obj_set_size(btn_marker_mode3, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
-            marker_btn_update_style(btn_marker_mode3, marker_mode3_active);
-            lv_obj_add_event_cb(btn_marker_mode3, marker_mode3_btn_event_cb, LV_EVENT_CLICKED, NULL);
-            lv_obj_t *lbl3 = lv_label_create(btn_marker_mode3);
-            lv_obj_set_style_text_font(lbl3, &ui_font_Hollow38, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(lbl3, UI_COLOR_INFO_TEXT, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(lbl3, "Mode 2");
-            lv_obj_center(lbl3);
-
-            // Mode 4 button
-            btn_marker_mode4 = lv_btn_create(parent_obj);
-            lv_obj_clear_flag(btn_marker_mode4, LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_set_pos(btn_marker_mode4, UI_MODE4_BTN_X, UI_MODE4_BTN_Y);
-            lv_obj_set_size(btn_marker_mode4, UI_MARKER_BTN_W, UI_MARKER_BTN_H);
-            marker_btn_update_style(btn_marker_mode4, marker_mode4_active);
-            lv_obj_add_event_cb(btn_marker_mode4, marker_mode4_btn_event_cb, LV_EVENT_CLICKED, NULL);
-            lv_obj_t *lbl4 = lv_label_create(btn_marker_mode4);
-            lv_obj_set_style_text_font(lbl4, &ui_font_Hollow38, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(lbl4, UI_COLOR_INFO_TEXT, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(lbl4, "Mode 4");
-            lv_obj_center(lbl4);
-        }
-
-        // Temperature label
-        {
-            lv_obj_t *lbl_temp = lv_label_create(parent_obj);
-            objects.label_throttle = lbl_temp;
-            lv_obj_set_pos(lbl_temp, UI_THR_ABOVE_X - 80, UI_THR_ABOVE_Y);
-            lv_obj_set_style_text_font(lbl_temp, &ui_font_Hollow38,
-                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(lbl_temp, UI_COLOR_INFO_TEXT,
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(lbl_temp, "Temp --.-°C");
-        }
+    /* Live tachometer overlay approximates the upper curved scale in the artwork. */
+    for (int i = 0; i < TACH_SEGMENTS; ++i) {
+        float u0 = (float)i / TACH_SEGMENTS;
+        float u1 = (float)(i + 1) / TACH_SEGMENTS;
+        int x0 = 81 + (int)(637.0f * u0);
+        int x1 = 81 + (int)(637.0f * u1);
+        float dx0 = (float)(x0 - 400), dx1 = (float)(x1 - 400);
+        int y0 = 132 + (int)(0.00042f * dx0 * dx0);
+        int y1 = 132 + (int)(0.00042f * dx1 * dx1);
+        tach_points[i][0] = (lv_point_t){(lv_coord_t)x0, (lv_coord_t)y0};
+        tach_points[i][1] = (lv_point_t){(lv_coord_t)x1, (lv_coord_t)y1};
+        lv_obj_t *seg = lv_line_create(root);
+        tach_segments[i] = seg;
+        lv_line_set_points(seg, tach_points[i], 2);
+        lv_obj_set_style_line_color(seg, lv_color_hex(i >= 65 ? 0xFF304A : 0x32E6FF), LV_PART_MAIN);
+        lv_obj_set_style_line_width(seg, 4, LV_PART_MAIN);
+        lv_obj_set_style_line_rounded(seg, true, LV_PART_MAIN);
+        lv_obj_set_style_line_opa(seg, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_clear_flag(seg, LV_OBJ_FLAG_CLICKABLE);
     }
 
-    tick_screen_main();
+    rpm_pointer = lv_line_create(root);
+    rpm_pointer_points[0] = (lv_point_t){81, 166};
+    rpm_pointer_points[1] = (lv_point_t){81, 181};
+    lv_line_set_points(rpm_pointer, rpm_pointer_points, 2);
+    lv_obj_set_style_line_width(rpm_pointer, 5, LV_PART_MAIN);
+    lv_obj_set_style_line_rounded(rpm_pointer, true, LV_PART_MAIN);
+    lv_obj_set_style_line_color(rpm_pointer, lv_color_white(), LV_PART_MAIN);
+    lv_obj_add_flag(rpm_pointer, LV_OBJ_FLAG_HIDDEN);
+
+    /* Transparent compatibility widgets for existing mock_data.cpp semantics. */
+    objects.container_gauge = lv_obj_create(root);
+    lv_obj_set_pos(objects.container_gauge, 0, 0);
+    lv_obj_set_size(objects.container_gauge, 800, 480);
+    lv_obj_set_style_bg_opa(objects.container_gauge, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(objects.container_gauge, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(objects.container_gauge, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(objects.container_gauge, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    objects.label_rpm = make_label(objects.container_gauge, "0000", 197, RPM_LABEL_Y, 406,
+                                  &ui_font_km_136, 0xF5F6FA);
+    /* Existing mock_data.cpp/main.cpp still updates objects.label_rpm.
+       Hide its pixels but retain its text as the authoritative RPM value. */
+    lv_obj_set_style_text_opa(objects.label_rpm, LV_OPA_TRANSP, LV_PART_MAIN);
+    for (int i = 0; i < 4; ++i) {
+        rpm_digits[i] = make_label(objects.container_gauge, "0",
+                                   RPM_DIGIT_X + i * RPM_DIGIT_STEP,
+                                   RPM_LABEL_Y, RPM_DIGIT_WIDTH,
+                                   &ui_font_km_136, 0xF5F6FA);
+        lv_obj_clear_flag(rpm_digits[i], LV_OBJ_FLAG_CLICKABLE);
+    }
+    lv_timer_create(rpm_sync_digits, 35, NULL);
+    for (int i = 0; i < 4; ++i) make_value_glow(rpm_digits[i], rpm_glow[i]);
+
+    objects.arc_rpm_0_40 = lv_arc_create(root);
+    lv_arc_set_range(objects.arc_rpm_0_40, 0, 4000);
+    lv_obj_add_flag(objects.arc_rpm_0_40, LV_OBJ_FLAG_HIDDEN);
+    objects.bar_rpm_40_80 = lv_bar_create(root);
+    lv_bar_set_range(objects.bar_rpm_40_80, 0, 4000);
+    lv_obj_add_flag(objects.bar_rpm_40_80, LV_OBJ_FLAG_HIDDEN);
+
+    objects.container_throttle = lv_obj_create(root);
+    lv_obj_set_pos(objects.container_throttle, 0, 0);
+    lv_obj_set_size(objects.container_throttle, 800, 480);
+    lv_obj_set_style_bg_opa(objects.container_throttle, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(objects.container_throttle, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(objects.container_throttle, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(objects.container_throttle, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    objects.label_batt = make_label(objects.container_throttle, "--.- V", 164, 310, 172,
+                                    &ui_font_Hollow85, 0xFFFFFF);
+    objects.label_throttle = make_label(objects.container_throttle, "--.- C", 551, 310, 185,
+                                        &ui_font_Hollow85, 0xFFFFFF);
+    battery_value = objects.label_batt;
+    temp_value = objects.label_throttle;
+    make_value_glow(battery_value, batt_glow);
+    make_value_glow(temp_value, temp_glow);
+    lv_timer_create(glow_sync_timer, 35, NULL);
+    apply_background();
+    objects.label_lambda = make_label(objects.container_throttle, "", 0, 0, 1,
+                                      &ui_font_Hollow85, 0xFFFFFF);
+    lv_obj_add_flag(objects.label_lambda, LV_OBJ_FLAG_HIDDEN);
+
+    /* Invisible but active touch zones at the original button positions. */
+    make_touch_button(root, 0, 1, "MODE 1", "DASH", 0x22DFFF);
+    make_touch_button(root, 208, 2, "NIXIE", "MODE 2", 0x22DFFF);
+    make_touch_button(root, 416, 3, "ECU DATA", "MODE 3", 0xFF3752);
+    make_touch_button(root, 624, 4, "MODE 2", "NIXIE", 0xFF9A35);
+    update_nav_appearance();
+
 }
 
-// -------------------------------------------------------------------
-// SCREEN TICK
-// -------------------------------------------------------------------
-void tick_screen_main() {
-    // This function is called periodically
-}
-
-// -------------------------------------------------------------------
-// CHANGE COLOR THEME
-// -------------------------------------------------------------------
+void tick_screen_main(void) {}
 void change_color_theme(uint32_t theme_index) {
     active_theme_index = theme_index;
-
-    lv_obj_set_style_bg_color(objects.main,
-        lv_color_hex(theme_colors[theme_index][1]),
-        LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    lv_obj_set_style_text_color(objects.label_rpm,
-        UI_COLOR_RPM_TEXT,
-        LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    marker_btn_update_style(btn_marker_left, marker_left_active);
-    marker_btn_update_style(btn_marker_right, marker_right_active);
-    marker_btn_update_style(btn_marker_mode3, marker_mode3_active);
-    marker_btn_update_style(btn_marker_mode4, marker_mode4_active);
-
-    lv_obj_invalidate(objects.main);
+    chrome_background = (theme_index % 2U) != 0U;
+    apply_background();
+    if (objects.main) lv_obj_invalidate(objects.main);
 }
-
-uint32_t theme_colors[1][2] = {
-    { 0xffff2d2e, 0xff000000 },
-};
-
-typedef void (*tick_screen_func_t)();
-tick_screen_func_t tick_screen_funcs[] = {
-    tick_screen_main,
-};
-
-void tick_screen(int screen_index) {
-    tick_screen_funcs[screen_index]();
-}
-
-void tick_screen_by_id(enum ScreensEnum screenId) {
-    tick_screen_funcs[screenId - 1]();
-}
-
-void create_screens() {
-    lv_disp_t *dispp = lv_disp_get_default();
-    lv_theme_t *theme = lv_theme_default_init(dispp,
-                                              lv_palette_main(LV_PALETTE_BLUE),
-                                              lv_palette_main(LV_PALETTE_RED),
-                                              true,
-                                              LV_FONT_DEFAULT);
-    lv_disp_set_theme(dispp, theme);
-
+typedef void (*tick_screen_func_t)(void);
+tick_screen_func_t tick_screen_funcs[] = {tick_screen_main};
+void tick_screen(int screen_index) { if (screen_index == 0) tick_screen_main(); }
+void tick_screen_by_id(enum ScreensEnum screenId) { if ((int)screenId == 1) tick_screen_main(); }
+void create_screens(void) {
+    lv_disp_t *d = lv_disp_get_default();
+    lv_theme_t *t = lv_theme_default_init(d, lv_palette_main(LV_PALETTE_RED),
+                                           lv_palette_main(LV_PALETTE_GREY), true, LV_FONT_DEFAULT);
+    lv_disp_set_theme(d, t);
     create_screen_main();
 }
+int get_marker_right_state(void) { return TEST_MODE ? 1 : 0; }

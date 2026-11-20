@@ -1,3 +1,7 @@
+// RWB JANINE / AIR WERK - V4 conservative performance cleanup
+// Preserves Trijekt CAN mapping, 19-byte ESP-NOW packet, LVGL object names,
+// Nixie UART protocol and menu actions. Hardware build not verified.
+
 
 #include <Arduino.h>
 #include <esp_display_panel.hpp>
@@ -42,7 +46,7 @@ LV_FONT_DECLARE(ui_font_Hollow38);
 
 // Required by existing generated screens.c
 extern "C" {
-    bool TEST_MODE = false;
+    bool TEST_MODE = true;
 }
 
 // ============================================================
@@ -66,7 +70,16 @@ static constexpr uint32_t DEBUG_INTERVAL_MS = 1000;
 static constexpr uint32_t CAN_DEBUG_INTERVAL_MS = 5000;
 
 static constexpr uint16_t MAX_RPM = 8000;
-static constexpr int CAN_BATCH_SIZE = 512;
+// TEMPORARY DISPLAY DEMO. Set false for real driving.
+static constexpr bool DASH_DEMO_MODE = true;
+
+// Limit each loop's CAN work so the touchscreen and ESP-NOW stay responsive.
+static constexpr int CAN_BATCH_SIZE = 96;
+static constexpr uint32_t CAN_TIME_BUDGET_US = 2000;
+// Change these to true when diagnosing a CAN problem.
+static constexpr bool PRINT_LIVE_VALUES = false;
+static constexpr bool PRINT_CAN_DIAGNOSTICS = false;
+static constexpr bool PRINT_LAMBDA_RAW = false;
 static constexpr int CAN_VALUE_COUNT = 20;
 
 // ============================================================
@@ -219,7 +232,7 @@ static Mode2Layout mode2Layout[CAN_VALUE_COUNT] = {
     { true,   20, 275, "E-Gas"       },
     { true,   20, 310, "E-Target"    },
     { true,   20, 345, "Engine Temp" },
-    { true,   20, 380, "Air Temp"    },
+    { false,  20, 380, "Air Temp"    }, // Hidden from Mode 2 screen
 
     // ========================================================
     // RIGHT COLUMN
@@ -709,7 +722,7 @@ void decodeCANMessage(const twai_message_t &m)
 
             // Diagnose: CAN ID 705 (decimal) raw Lambda payload.
             static uint32_t lastLambdaDebugMs = 0;
-            if (now - lastLambdaDebugMs >= 1000) {
+            if (PRINT_LAMBDA_RAW && now - lastLambdaDebugMs >= 1000) {
                 Serial.printf(
                     "LAMBDA CAN ID=%lu RAW=%02X %02X %02X %02X %02X %02X %02X %02X | L1=%.3f L2=%.3f\n",
                     (unsigned long)m.identifier,
@@ -793,6 +806,68 @@ void updateECUHousekeeping()
 
     if (!rpmFresh)
         ecu.rpm = 0;
+}
+
+// ============================================================
+// TEMPORARY TRIJEKT DISPLAY DEMO: 0 -> 8000 -> 0 every 16 sec.
+// Called AFTER CAN housekeeping so the screen sees demo values.
+// CAN parsing stays intact; ESP-NOW transmission is suppressed in demo.
+// ============================================================
+static void updateDashboardDemo() {
+    if (!DASH_DEMO_MODE) return;
+    const uint32_t now = millis();
+    const uint32_t phase = now % 16000UL;
+    const uint32_t ramp = (phase <= 8000UL) ? phase : 16000UL - phase;
+    const uint16_t rpm = (uint16_t)ramp; // 1 ms = 1 RPM, up to 8000
+    const float pct = (float)rpm / 8000.0f;
+    const float batt = 12.0f + 2.4f * pct;
+    const float engine = 55.0f + 70.0f * pct;
+    const float throttle = 100.0f * pct;
+    ecu.rpm = rpm;
+    ecu.batt = batt;
+    ecu.motor = engine;
+    ecu.throttle_dk = throttle;
+    ecu.throttle_pedal = throttle;
+    ecu.lambda = 0.85f + 0.25f * (1.0f - pct);
+    ecu.data_valid = 1;
+    ecu.lambda_valid = 1;
+    ecu.engine_running = rpm > 100;
+    ecu.last_update = now;
+    trijekt.rpm = rpm;
+    trijekt.rpmValid = true;
+    trijekt.lastRpmMs = now;
+    trijekt.battery = batt;
+    trijekt.batteryValid = true;
+    trijekt.lastBatteryMs = now;
+    trijekt.engineTemp = engine;
+    trijekt.tempValid = true;
+    trijekt.lastTempMs = now;
+    trijekt.throttleDK = throttle;
+    trijekt.throttlePedal = throttle;
+    trijekt.throttleValid = true;
+    trijekt.lastThrottleMs = now;
+    trijekt.fuelConsumption = 0.5f + 28.0f * pct;
+    trijekt.torque = (uint16_t)(280.0f * pct);
+    trijekt.motorStatus = rpm > 100 ? 1 : 0;
+    trijekt.lambda1 = ecu.lambda;
+    trijekt.lambda2 = ecu.lambda + 0.02f;
+    trijekt.lambda1Valid = true;
+    trijekt.lambda2Valid = true;
+    trijekt.lastLambdaMs = now;
+    trijekt.oilTemp = 45.0f + 65.0f * pct;
+    trijekt.oilTempValid = true;
+    trijekt.lastOilMs = now;
+    trijekt.internalTemp = 25.0f + 25.0f * pct;
+    trijekt.airTemp = 18.0f + 12.0f * pct;
+    trijekt.intakePressure = (uint16_t)(950.0f + 50.0f * pct);
+    trijekt.externalPressure = 1013;
+    trijekt.fuelPressure = (uint16_t)(300.0f + 50.0f * pct);
+    trijekt.oilPressure = (uint16_t)(100.0f + 350.0f * pct);
+    trijekt.pressureValid = true;
+    trijekt.lastPressureMs = now;
+    trijekt.egasControl = (uint16_t)throttle;
+    trijekt.egasTarget = throttle;
+    if (rpm > rpm_max) rpm_max = rpm;
 }
 
 // ============================================================
@@ -1079,6 +1154,12 @@ extern "C" void open_trijekt_mode2(void)
     if (airScreen) {
         lv_scr_load(airScreen);
     }
+}
+
+/* Direct ECU values navigation from RWB dashboard touch button. */
+extern "C" void open_trijekt_mode3(void)
+{
+    if (canScreen) lv_scr_load(canScreen);
 }
 
 extern "C" void open_trijekt_mode1(void)
@@ -1787,9 +1868,8 @@ static const char *airActions[] = {
 static void airCmd(const String &s) {
  if (AIRWERK_UART_ENABLED) {
   airSerial.println(s);
-  airSerial.flush();
-  if (s == "MODE:CLOCK") { airSerial.println("DOTS:ON"); airSerial.flush(); }
-  Serial.printf("AIR WERK RS485 TX: %s\n", s.c_str());
+  if (s == "MODE:CLOCK") { airSerial.println("DOTS:ON"); }
+  // TX tracing disabled to avoid serial log overhead during animations.
  } else {
   Serial.printf("AIR WERK RS485 DISABLED: %s\n", s.c_str());
  }
@@ -1798,7 +1878,7 @@ static void airDisplay(const char *digits) { if(strcmp(airDigits,digits)!=0) { s
 static void airSave() { airPrefs.putBool("led",airLed); airPrefs.putBool("buzzer",airBuzz); airPrefs.putBool("autocine",airAuto); airPrefs.putUChar("color",airColor); airPrefs.putUChar("ledbright",airLedBright); airPrefs.putUChar("tube",airTubeBright); }
 static void airStopSW();
 static void airSetClock() { airStopSW(); airAnimating=false; airStopwatch=false; airECUMode=0; airFade=false; airClock=true; airCmd("MODE:CLOCK"); strcpy(airDigits,"------"); airLastCycle=millis(); }
-static void airStartAnimation(uint8_t style) { airAnimating=true; airAnimStyle=0; airClock=false; airStopwatch=false; airECUMode=0; airFade=false; airLed=false; airAnimStart=millis(); airLastFrame=0; airLastPulse=-1; airCmd("LED:OFF"); airCmd(String("NIXIE:BRIGHT:")+airTubeBright); strcpy(airDigits,"------"); }
+static void airStartAnimation(uint8_t style) { airAnimating=true; airAnimStyle=style; airClock=false; airStopwatch=false; airECUMode=0; airFade=false; airLed=false; airAnimStart=millis(); airLastFrame=0; airLastPulse=-1; airCmd("LED:OFF"); airCmd(String("NIXIE:BRIGHT:")+airTubeBright); strcpy(airDigits,"------"); }
 static uint32_t airSWMillis() { return airSWBase+(airSWRun ? millis()-airSWStart : 0); }
 static void airStopSW() { if(airSWRun) airSWBase+=millis()-airSWStart; airSWRun=false; }
 static void airUpdateStatus() {
@@ -2191,8 +2271,11 @@ void loop()
     if (can_ok) {
 
         twai_message_t msg;
+        const uint32_t canStartUs = micros();
 
         for (int i = 0; i < CAN_BATCH_SIZE; i++) {
+            if ((uint32_t)(micros() - canStartUs) >= CAN_TIME_BUDGET_US)
+                break;
 
             esp_err_t result = twai_receive(
                 &msg,
@@ -2213,6 +2296,9 @@ void loop()
     // ========================================================
 
     updateECUHousekeeping();
+
+    // Demo overrides displayed values after real-CAN housekeeping.
+    updateDashboardDemo();
 
     // ========================================================
     // 3. UPDATE LVGL
@@ -2256,7 +2342,8 @@ void loop()
     // 4. ESP-NOW
     // ========================================================
 
-    sendEspNowValues();
+    // Do not transmit simulated ECU data to the M5Stack/Nixie.
+    if (!DASH_DEMO_MODE) sendEspNowValues();
 
     // ========================================================
     // 5. SERIAL LIVE VALUES
@@ -2266,7 +2353,7 @@ void loop()
 
     now = millis();
 
-    if (now - lastDebug >= DEBUG_INTERVAL_MS) {
+    if (PRINT_LIVE_VALUES && now - lastDebug >= DEBUG_INTERVAL_MS) {
 
         printAllValues();
 
@@ -2280,6 +2367,7 @@ void loop()
     now = millis();
 
     if (
+        PRINT_CAN_DIAGNOSTICS &&
         now - canLastReportMs >=
         CAN_DEBUG_INTERVAL_MS
     ) {
