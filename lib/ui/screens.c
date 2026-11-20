@@ -36,7 +36,82 @@ lv_obj_t *tick_value_change_obj;
 uint32_t active_theme_index = 0;
 uint32_t theme_colors[1][2] = {{0xffff334b, 0xff030408}};
 
-#define TACH_SEGMENTS 80
+
+/* ============================================================
+ * AIR WERK RPM CUSTOMIZATION
+ * ============================================================
+ *
+ * EDIT THESE VALUES TO CUSTOMIZE YOUR RPM DASHBOARD.
+ *
+ * Geometry uses screen coordinates in pixels.
+ * X increases to the right; Y increases downward.
+ *
+ * These settings control the LIVE RPM overlay.
+ * They do not modify the background PNG artwork.
+ *
+ * ------------------------------------------------------------
+ * RPM ARC
+ * ------------------------------------------------------------ */
+
+/* Number of illuminated arc segments. */
+#define AW_TACH_SEGMENTS       80
+
+/* Arc starts at X=81 and spans 637 pixels. */
+#define AW_ARC_X              81
+#define AW_ARC_WIDTH          637.0f
+
+/* Vertical position at the center of the curve. */
+#define AW_ARC_Y              132
+
+/* Curvature: larger number = more curved arc. */
+#define AW_ARC_CURVE          0.00042f
+
+/* Thickness of the illuminated arc in pixels. */
+#define AW_ARC_THICKNESS      7
+
+/* Arc colors: hexadecimal RGB values. */
+#define AW_ARC_COLOR_NORMAL   0x91A19C  /* Chrome cyan */
+#define AW_ARC_COLOR_RED      0xF5410A  /* Redline */
+
+/* RPM threshold where the arc turns red. */
+#define AW_REDLINE_RPM        6500
+
+/* ------------------------------------------------------------
+ * MOVING RPM POINTER / SLIDER
+ * ------------------------------------------------------------ */
+
+/* Pointer extends above and below the arc. */
+#define AW_POINTER_TOP        9
+#define AW_POINTER_BOTTOM     7
+
+/* Pointer colors. */
+#define AW_POINTER_COLOR      0xF8FDFF
+#define AW_POINTER_RED        0xFF324D
+
+/* ------------------------------------------------------------
+ * RPM NUMBERS
+ * ------------------------------------------------------------ */
+
+/* Vertical position of the large RPM digits. */
+#define AW_RPM_LABEL_Y        135
+
+/* Startup animation begins this many pixels lower. */
+#define AW_RPM_RISE_PIXELS    100
+
+/* First digit X position. */
+#define AW_RPM_DIGIT_X        185
+
+/* Horizontal distance between digit positions. */
+#define AW_RPM_DIGIT_STEP     108
+
+/* Width allocated to each digit. */
+#define AW_RPM_DIGIT_WIDTH    112
+
+/* ============================================================
+ * END AIR WERK RPM CUSTOMIZATION
+ * ============================================================ */
+
+#define TACH_SEGMENTS AW_TACH_SEGMENTS
 static lv_obj_t *tach_segments[TACH_SEGMENTS];
 static lv_point_t tach_points[TACH_SEGMENTS][2];
 static lv_obj_t *battery_value = NULL;
@@ -55,11 +130,11 @@ static lv_obj_t *rpm_pointer = NULL;
 static lv_point_t rpm_pointer_points[2];
 
 /* Four fixed RPM digit slots. Keep objects.label_rpm as the live-data source. */
-#define RPM_LABEL_Y 135
-#define RPM_RISE_PIXELS 100
-#define RPM_DIGIT_X 185
-#define RPM_DIGIT_STEP 108
-#define RPM_DIGIT_WIDTH 112
+#define RPM_LABEL_Y AW_RPM_LABEL_Y
+#define RPM_RISE_PIXELS AW_RPM_RISE_PIXELS
+#define RPM_DIGIT_X AW_RPM_DIGIT_X
+#define RPM_DIGIT_STEP AW_RPM_DIGIT_STEP
+#define RPM_DIGIT_WIDTH AW_RPM_DIGIT_WIDTH
 static lv_obj_t *rpm_digits[4] = {NULL, NULL, NULL, NULL};
 static char rpm_previous[5] = "";
 
@@ -266,13 +341,13 @@ void rwb_set_tach_rpm(uint16_t rpm) {
     if (rpm_pointer) {
         /* Moving bright pointer at the leading edge of the illuminated scale. */
         float u = (float)rpm / 8000.0f;
-        float x = 81.0f + 637.0f * u;
-        float dx = x - 400.0f;
-        float y = 132.0f + 0.00042f * dx * dx;
-        rpm_pointer_points[0] = (lv_point_t){(lv_coord_t)x, (lv_coord_t)(y - 9)};
-        rpm_pointer_points[1] = (lv_point_t){(lv_coord_t)x, (lv_coord_t)(y + 7)};
+        float x = AW_ARC_X + AW_ARC_WIDTH * u;
+        float dx = x - (AW_ARC_X + AW_ARC_WIDTH / 2.0f);
+        float y = AW_ARC_Y + AW_ARC_CURVE * dx * dx;
+        rpm_pointer_points[0] = (lv_point_t){(lv_coord_t)x, (lv_coord_t)(y - AW_POINTER_TOP)};
+        rpm_pointer_points[1] = (lv_point_t){(lv_coord_t)x, (lv_coord_t)(y + AW_POINTER_BOTTOM)};
         lv_line_set_points(rpm_pointer, rpm_pointer_points, 2);
-        lv_obj_set_style_line_color(rpm_pointer, lv_color_hex(rpm >= 6500 ? 0xFF324D : 0xF8FDFF), LV_PART_MAIN);
+        lv_obj_set_style_line_color(rpm_pointer, lv_color_hex(rpm >= AW_REDLINE_RPM ? AW_POINTER_RED : AW_POINTER_COLOR), LV_PART_MAIN);
         if (rpm == 0) lv_obj_add_flag(rpm_pointer, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_clear_flag(rpm_pointer, LV_OBJ_FLAG_HIDDEN);
     }
@@ -391,18 +466,18 @@ void create_screen_main(void) {
     for (int i = 0; i < TACH_SEGMENTS; ++i) {
         float u0 = (float)i / TACH_SEGMENTS;
         float u1 = (float)(i + 1) / TACH_SEGMENTS;
-        int x0 = 81 + (int)(637.0f * u0);
-        int x1 = 81 + (int)(637.0f * u1);
-        float dx0 = (float)(x0 - 400), dx1 = (float)(x1 - 400);
-        int y0 = 132 + (int)(0.00042f * dx0 * dx0);
-        int y1 = 132 + (int)(0.00042f * dx1 * dx1);
+        int x0 = AW_ARC_X + (int)(AW_ARC_WIDTH * u0);
+        int x1 = AW_ARC_X + (int)(AW_ARC_WIDTH * u1);
+        float dx0 = (float)(x0 - (AW_ARC_X + AW_ARC_WIDTH / 2.0f)), dx1 = (float)(x1 - (AW_ARC_X + AW_ARC_WIDTH / 2.0f));
+        int y0 = AW_ARC_Y + (int)(AW_ARC_CURVE * dx0 * dx0);
+        int y1 = AW_ARC_Y + (int)(AW_ARC_CURVE * dx1 * dx1);
         tach_points[i][0] = (lv_point_t){(lv_coord_t)x0, (lv_coord_t)y0};
         tach_points[i][1] = (lv_point_t){(lv_coord_t)x1, (lv_coord_t)y1};
         lv_obj_t *seg = lv_line_create(root);
         tach_segments[i] = seg;
         lv_line_set_points(seg, tach_points[i], 2);
-        lv_obj_set_style_line_color(seg, lv_color_hex(i >= 65 ? 0xFF304A : 0x32E6FF), LV_PART_MAIN);
-        lv_obj_set_style_line_width(seg, 4, LV_PART_MAIN);
+        lv_obj_set_style_line_color(seg, lv_color_hex(i >= (AW_REDLINE_RPM * TACH_SEGMENTS / 8000) ? AW_ARC_COLOR_RED : AW_ARC_COLOR_NORMAL), LV_PART_MAIN);
+        lv_obj_set_style_line_width(seg, AW_ARC_THICKNESS, LV_PART_MAIN);
         lv_obj_set_style_line_rounded(seg, true, LV_PART_MAIN);
         lv_obj_set_style_line_opa(seg, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_clear_flag(seg, LV_OBJ_FLAG_CLICKABLE);
