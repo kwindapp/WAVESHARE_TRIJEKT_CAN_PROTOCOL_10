@@ -23,6 +23,14 @@ The system could also feature configurable warning thresholds. If the engine tem
 
 This could also work for other ECU parameters, such as oil temperature, oil pressure, or battery voltage, combining classic Nixie ambient lighting with modern engine monitoring and safety features.
 A perfect combination of classic Porsche aesthetics and modern technology!
+https://www.youtube.com/shorts/n8YUyAS8yDo
+<img width="3023" height="1868" alt="IMG_9336" src="https://github.com/user-attachments/assets/8ac924df-949f-4d40-927c-088973288a44" />
+
+
+
+<img width="1206" height="1351" alt="IMG_9302" src="https://github.com/user-attachments/assets/2c76df52-dc1e-4195-99e0-da47383169c5" />
+<img width="1206" height="1281" alt="IMG_9301" src="https://github.com/user-attachments/assets/a9da15c4-c9f0-4766-b10a-e1ac695641c5" />
+
 <img width="1536" height="1024" alt="Air Werk Luxury Automotive Moodboard" src="https://github.com/user-attachments/assets/3ccf082d-c607-4e09-96d1-eb2992083d2a" />
 
 
@@ -43,7 +51,7 @@ Wi-Fi Channel: 1<img width="1536" height="1024" alt="Nixie Clocks in Classic Por
 <img width="1206" height="1761" alt="IMG_8536" src="https://github.com/user-attachments/assets/a3bed9a1-e57c-49e8-b89e-9853679806f0" />
 https://motec.zendesk.com/hc/en-gb/article_attachments/14440215117327
 my first test great 12V suplly perfect
-<img width="3024" height="4032" alt="IMG_8677 2" src="https://github.com/user-attachments/assets/8c40b173-1183-402b-a37d-170dd94a85d8" />
+
 
 AIR WERK – Retro Tube Amplifier Concept
 
