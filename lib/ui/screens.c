@@ -28,6 +28,7 @@ LV_FONT_DECLARE(ui_font_Hollow22);
 extern bool TEST_MODE;
 extern void open_trijekt_mode2(void);
 extern void open_trijekt_mode3(void);
+extern void open_trijekt_settings(void);
 objects_t objects;
 lv_obj_t *tick_value_change_obj;
 uint32_t active_theme_index = 0;
@@ -155,6 +156,21 @@ static void rpm_start_entrance(void) {
     }
 }
 
+/* Called after a menu overlay is hidden. LV_EVENT_SCREEN_LOADED does not
+   fire because objects.main stays active throughout navigation. */
+void dashboard_resume_animation(void) {
+    if (!objects.main) return;
+    /* Cancel any unfinished entrance and replay the four RPM digits. */
+    rpm_start_entrance();
+    /* The original battery/temp entrance is a one-time startup effect.
+       Keep their current positions when returning from a menu. */
+    if (objects.label_rpm) {
+        rpm_previous[0] = '\0';
+        rpm_sync_digits(NULL);
+    }
+    lv_obj_invalidate(objects.main);
+}
+
 static lv_obj_t *make_label(lv_obj_t *parent, const char *s, int x, int y,
                             int w, const lv_font_t *font, uint32_t color) {
     lv_obj_t *l = lv_label_create(parent);
@@ -250,13 +266,15 @@ void rwb_set_tach_rpm(uint16_t rpm) {
 extern void rwb_toggle_test_mode(void);
 
 static void touch_nav_event(lv_event_t *e) {
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    /* Dispatch once on PRESS; RELEASED/CLICKED can be lost if the finger
+       moves outside the transparent hit zone on GT911. */
+    if (lv_event_get_code(e) != LV_EVENT_PRESSED) return;
     int target = (int)(intptr_t)lv_event_get_user_data(e);
-    if (target == 1) {
-        rwb_toggle_test_mode();
-    }
-    else if (target == 2 || target == 4) open_trijekt_mode2();
+    printf("NAV TOUCH PRESSED target=%d\n", target);
+    if (target == 1) rwb_toggle_test_mode();
+    else if (target == 2) open_trijekt_mode2();
     else if (target == 3) open_trijekt_mode3();
+    else if (target == 4) open_trijekt_settings();
 }
 
 /* Wide invisible touch targets; artwork-matched button faces on original bg only. */
@@ -302,7 +320,7 @@ static void make_touch_button(lv_obj_t *root, int x, int target, const char *tit
     lv_obj_set_style_pad_all(hit, 0, 0);
     lv_obj_clear_flag(hit, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(hit, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(hit, touch_nav_event, LV_EVENT_CLICKED, (void *)(intptr_t)target);
+    lv_obj_add_event_cb(hit, touch_nav_event, LV_EVENT_PRESSED, (void *)(intptr_t)target);
 
     lv_obj_t *face = lv_obj_create(hit);
     lv_obj_remove_style_all(face);
@@ -317,13 +335,6 @@ static void make_touch_button(lv_obj_t *root, int x, int target, const char *tit
     lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_center(label);
 
-    /* Keep MODE 2 text discoverable for the existing main.cpp hook. */
-    if (target == 2) {
-        lv_obj_t *compat = lv_label_create(hit);
-        lv_label_set_text(compat, "MODE 2");
-        lv_obj_set_style_text_opa(compat, LV_OPA_TRANSP, 0);
-        lv_obj_clear_flag(compat, LV_OBJ_FLAG_CLICKABLE);
-    }
     if (target >= 1 && target <= 4) {
         nav_buttons[target - 1] = hit;
         nav_faces[target - 1] = face;
@@ -437,8 +448,11 @@ void create_screen_main(void) {
     make_touch_button(root, 0, 1, "REAL", "DASH", 0x22DFFF);
     make_touch_button(root, 208, 2, "NIXIE", "MODE 2", 0x22DFFF);
     make_touch_button(root, 416, 3, "ECU DATA", "MODE 3", 0xFF3752);
-    make_touch_button(root, 624, 4, "MODE 2", "NIXIE", 0xFF9A35);
+    make_touch_button(root, 624, 4, "SETTINGS", "MENU", 0xFF9A35);
     update_nav_appearance();
+    for (int i = 0; i < 4; ++i) {
+        if (nav_buttons[i]) lv_obj_move_foreground(nav_buttons[i]);
+    }
 
 }
 
