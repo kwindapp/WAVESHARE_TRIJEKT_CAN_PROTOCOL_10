@@ -283,7 +283,7 @@ static void screen_event(lv_event_t *e) {
         if (!entrance_done) {
             entrance_done = true;
             animate_from_center(battery_value, 164, 200);
-            animate_from_center(temp_value, 551, 200);
+            animate_from_center(temp_value, 531, 200);
         }
     }
 }
