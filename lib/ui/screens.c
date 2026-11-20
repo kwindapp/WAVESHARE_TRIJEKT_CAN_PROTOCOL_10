@@ -247,19 +247,32 @@ void rwb_set_tach_rpm(uint16_t rpm) {
     }
 }
 
+extern void rwb_toggle_test_mode(void);
+
 static void touch_nav_event(lv_event_t *e) {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     int target = (int)(intptr_t)lv_event_get_user_data(e);
     if (target == 1) {
-        /* Dashboard is MODE 1; already active when this button is visible. */
-        if (objects.main && lv_scr_act() != objects.main) lv_scr_load(objects.main);
+        rwb_toggle_test_mode();
     }
     else if (target == 2 || target == 4) open_trijekt_mode2();
     else if (target == 3) open_trijekt_mode3();
 }
 
 /* Wide invisible touch targets; artwork-matched button faces on original bg only. */
+
+void rwb_set_test_mode_label(bool enabled) {
+    if (nav_labels[0]) {
+        lv_label_set_text(
+            nav_labels[0],
+            enabled ? "TEST" : "REAL"
+        );
+        lv_obj_center(nav_labels[0]);
+    }
+}
+
 static void update_nav_appearance(void) {
+
     for (int i = 0; i < 4; ++i) {
         lv_obj_t *face = nav_faces[i];
         lv_obj_t *label = nav_labels[i];
@@ -421,7 +434,7 @@ void create_screen_main(void) {
     lv_obj_add_flag(objects.label_lambda, LV_OBJ_FLAG_HIDDEN);
 
     /* Invisible but active touch zones at the original button positions. */
-    make_touch_button(root, 0, 1, "MODE 1", "DASH", 0x22DFFF);
+    make_touch_button(root, 0, 1, "REAL", "DASH", 0x22DFFF);
     make_touch_button(root, 208, 2, "NIXIE", "MODE 2", 0x22DFFF);
     make_touch_button(root, 416, 3, "ECU DATA", "MODE 3", 0xFF3752);
     make_touch_button(root, 624, 4, "MODE 2", "NIXIE", 0xFF9A35);

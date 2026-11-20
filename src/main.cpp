@@ -46,7 +46,7 @@ LV_FONT_DECLARE(ui_font_Hollow38);
 
 // Required by existing generated screens.c
 extern "C" {
-    bool TEST_MODE = true;
+    bool TEST_MODE = false;
 }
 
 // ============================================================
@@ -71,7 +71,7 @@ static constexpr uint32_t CAN_DEBUG_INTERVAL_MS = 5000;
 
 static constexpr uint16_t MAX_RPM = 8000;
 // TEMPORARY DISPLAY DEMO. Set false for real driving.
-static constexpr bool DASH_DEMO_MODE = true;
+static bool DASH_DEMO_MODE = false; // Boot with REAL CAN data
 
 // Limit each loop's CAN work so the touchscreen and ESP-NOW stay responsive.
 static constexpr int CAN_BATCH_SIZE = 96;
@@ -1138,6 +1138,29 @@ static lv_obj_t *originalScreen = nullptr;
 static lv_obj_t *canScreen = nullptr;
 static lv_obj_t *airScreen = nullptr; // forward declaration: MODE 2 Nixie
 
+
+// TEST / REAL toggle controlled by MENU 1 touch zone
+extern "C" void rwb_set_test_mode_label(bool enabled);
+
+extern "C" void rwb_toggle_test_mode(void) {
+    DASH_DEMO_MODE = !DASH_DEMO_MODE;
+    TEST_MODE = DASH_DEMO_MODE;
+
+    if (!DASH_DEMO_MODE) {
+        // Clear simulated data; wait for fresh CAN values
+        ecu = ECUData{};
+        trijekt = TrijektValues{};
+        lastRpmUpdateMs = 0;
+        lastCanUpdateMs = 0;
+        rpm_max = 0;
+    }
+
+    rwb_set_test_mode_label(DASH_DEMO_MODE);
+
+    Serial.printf("DASH MODE: %s\n",
+                  DASH_DEMO_MODE ? "TEST" : "REAL CAN");
+}
+
 static lv_obj_t *canValueLabels[CAN_VALUE_COUNT] = {};
 
 static uint32_t lastCANScreenUpdate = 0;
@@ -2189,6 +2212,7 @@ void setup()
 
         originalScreen = lv_scr_act();
     }
+
 
     // Create MODE 3 ECU values screen with Hollow38 font
     createCANScreen();
